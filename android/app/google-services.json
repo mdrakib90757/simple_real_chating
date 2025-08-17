@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "985581212942",
+    "project_id": "real-time-messaging-9b660",
+    "storage_bucket": "real-time-messaging-9b660.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:985581212942:android:becca1ca9ad8fe8e8af35f",
+        "android_client_info": {
+          "package_name": "com.example.web_socket_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBsZCl90xmmK8DADjfpXoK6bkIoWoVqGCs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
