@@ -40,7 +40,8 @@ class _ChatScreenState extends State<ChatScreen> {
     ids.sort();
     chatRoomId = ids.join('_');
   }
-/*
+
+  /*
   Future<void>_sendImage()async{
     final ImagePicker picker=ImagePicker();
     final XFile? image=await picker.pickImage(source: ImageSource.gallery);
@@ -94,11 +95,12 @@ class _ChatScreenState extends State<ChatScreen> {
         _isUploading = true;
       });
 
-
       const String cloudName = "dlqufneob";
       const String uploadPreset = "chat_app_unsigned";
 
-      final url = Uri.parse("https://api.cloudinary.com/v1_1/$cloudName/image/upload");
+      final url = Uri.parse(
+        "https://api.cloudinary.com/v1_1/$cloudName/image/upload",
+      );
 
       try {
         final request = http.MultipartRequest('POST', url)
@@ -112,29 +114,28 @@ class _ChatScreenState extends State<ChatScreen> {
           final responseString = String.fromCharCodes(responseData);
           final jsonMap = json.decode(responseString);
 
-
           final String downloadUrl = jsonMap['secure_url'];
           await _firebaseFirestore
               .collection("chat_rooms")
               .doc(chatRoomId)
               .collection("messages")
               .add({
-            "text": null,
-            "imageUrl": downloadUrl,
-            "type": "image",
-            "senderId": currentUser.uid,
-            "senderEmail": currentUser.email,
-            "timestamp": FieldValue.serverTimestamp(),
-          });
+                "text": null,
+                "imageUrl": downloadUrl,
+                "type": "image",
+                "senderId": currentUser.uid,
+                "senderEmail": currentUser.email,
+                "timestamp": FieldValue.serverTimestamp(),
+              });
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("image upload failed")),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text("image upload failed")));
         }
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("image update problem: $e")),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("image update problem: $e")));
       } finally {
         setState(() {
           _isUploading = false;
@@ -142,6 +143,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     }
   }
+
   void _sendTextMessage() {
     if (_textController.text.isNotEmpty) {
       _firebaseFirestore
@@ -149,13 +151,13 @@ class _ChatScreenState extends State<ChatScreen> {
           .doc(chatRoomId)
           .collection("messages")
           .add({
-        "text": _textController.text,
-        "imageUrl":null,
-        "type": "text",
-        "senderId": currentUser.uid,
-        "senderEmail": currentUser.email,
-        "timestamp": FieldValue.serverTimestamp(),
-      });
+            "text": _textController.text,
+            "imageUrl": null,
+            "type": "text",
+            "senderId": currentUser.uid,
+            "senderEmail": currentUser.email,
+            "timestamp": FieldValue.serverTimestamp(),
+          });
       _textController.clear();
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -166,6 +168,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     }
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -205,13 +208,11 @@ class _ChatScreenState extends State<ChatScreen> {
                     final doc = messages[index];
                     final data = doc.data() as Map<String, dynamic>;
                     final message = Message(
-                      sender: data['senderEmail']??"Unknown user",
+                      sender: data['senderEmail'] ?? "Unknown user",
                       text: data['text'],
                       imageUrl: data["imageUrl"],
                       type: data['type'] ?? 'text',
-                      isMe:
-                          data['senderId'] ==
-                          currentUser.uid,
+                      isMe: data['senderId'] == currentUser.uid,
                     );
                     return _buildMessageBubble(message);
                   },
@@ -241,7 +242,9 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
         Container(
-          padding: message.type == 'image' ? EdgeInsets.all(5) : EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: message.type == 'image'
+              ? EdgeInsets.all(5)
+              : EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
             color: isMe ? AppColor.primaryColor : Color(0xFFF1F1F1),
             borderRadius: BorderRadius.only(
@@ -251,25 +254,32 @@ class _ChatScreenState extends State<ChatScreen> {
               bottomRight: isMe ? Radius.zero : const Radius.circular(20),
             ),
           ),
-          child: message.type== "image"?
-          ClipRRect(
-            borderRadius: BorderRadius.circular(15.0),
-            child: Image.network(
-              message.imageUrl??"",
-              height: 200,
-              width: 200,
-              fit: BoxFit.cover,
-              loadingBuilder: (context, child, progress) {
-                return progress == null ? child : SizedBox(height: 200, width: 200, child: Center(child: CircularProgressIndicator()));
-              },
-            ),
-          ): Text(
-            message.text??"",
-            style: TextStyle(
-              color: isMe ? Colors.white : Colors.black87,
-              fontSize: 16,
-            ),
-          ),
+          child: message.type == "image"
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(15.0),
+                  child: Image.network(
+                    message.imageUrl ?? "",
+                    height: 200,
+                    width: 200,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (context, child, progress) {
+                      return progress == null
+                          ? child
+                          : SizedBox(
+                              height: 200,
+                              width: 200,
+                              child: Center(child: CircularProgressIndicator()),
+                            );
+                    },
+                  ),
+                )
+              : Text(
+                  message.text ?? "",
+                  style: TextStyle(
+                    color: isMe ? Colors.white : Colors.black87,
+                    fontSize: 16,
+                  ),
+                ),
         ),
         const SizedBox(height: 10),
       ],
@@ -284,7 +294,7 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           IconButton(
             icon: Icon(Icons.photo_camera, color: AppColor.primaryColor),
-            onPressed: _isUploading ?null: _sendImage,
+            onPressed: _isUploading ? null : _sendImage,
           ),
           Expanded(
             child: TextField(
@@ -308,7 +318,7 @@ class _ChatScreenState extends State<ChatScreen> {
           GestureDetector(
             onTap: () {
               _sendTextMessage();
-              },
+            },
             child: Container(
               padding: EdgeInsets.all(15),
               decoration: BoxDecoration(
