@@ -84,17 +84,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           mainAxisAlignment: MainAxisAlignment.start,
           children: [
             _buildOnlineUsersList(),
-            Icon(Icons.chat_bubble_outline, size: 100, color: Colors.grey[200]),
+
+            Icon(Icons.chat_bubble_outline, size: 80, color: Colors.grey[200]),
             SizedBox(height: 20),
             Text(
               "Welcome to the Chat App!",
-              style: TextStyle(fontSize: 22, color: Colors.grey[700]),
+              style: TextStyle(fontSize: 18, color: Colors.grey[700]),
             ),
             SizedBox(height: 10),
             Text(
               "Click the menu on the top right to see online users.",
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, color: Colors.grey[500]),
+              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
             ),
           ],
         ),
@@ -231,7 +232,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       Text(
                         email.split('@')[0],
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12),
+                        style: TextStyle(fontSize: 15),
                       ),
                     ],
                   ),
