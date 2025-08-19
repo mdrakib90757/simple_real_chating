@@ -2,11 +2,16 @@
 
 class Message{
   final String sender;
-  final String text;
+  final String? text;
+  final String? imageUrl;
+  final String type;
   final bool isMe;
+
   Message({
     required this.sender,
-    required this.text,
+     this.text,
+    this.imageUrl,
     required this.isMe,
+    required this.type
 });
 }

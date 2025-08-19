@@ -12,19 +12,19 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final FirebaseAuth _auth=FirebaseAuth.instance;
-  final TextEditingController _emailController =TextEditingController();
-  final TextEditingController _passwordController= TextEditingController();
-  bool _isLoading=false;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  bool _isLoading = false;
+
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
-
-  Future<void>Login()async {
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty){
+  Future<void> Login() async {
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('please filed email and password.'),
@@ -42,8 +42,8 @@ class _LoginScreenState extends State<LoginScreen> {
         password: _passwordController.text.trim(),
       );
 
-      User?user = userCredential.user;
-      if (user != null){
+      User? user = userCredential.user;
+      if (user != null) {
         await user.reload();
         user = _auth.currentUser;
         if (user!.emailVerified) {
@@ -51,24 +51,24 @@ class _LoginScreenState extends State<LoginScreen> {
             Navigator.pushAndRemoveUntil(
               context,
               MaterialPageRoute(builder: (context) => const HomeScreen()),
-                  (route) => false,
+              (route) => false,
             );
           }
         } else {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text("your email verify failed"),
-                  action: SnackBarAction(
-                    label: "Again try",
-                    onPressed: () async {
-                      await user?.sendEmailVerification();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                              content: Text("verification email again send"))
-                      );
-                    },
-                  ),
-                )
+              SnackBar(
+                content: Text("your email verify failed"),
+                action: SnackBarAction(
+                  label: "Again try",
+                  onPressed: () async {
+                    await user?.sendEmailVerification();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("verification email again send")),
+                    );
+                  },
+                ),
+              ),
             );
           }
           await _auth.signOut();
@@ -87,8 +87,9 @@ class _LoginScreenState extends State<LoginScreen> {
           errorMessage = "login problem? please again try it";
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(errorMessage)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(errorMessage)));
       }
     } finally {
       if (mounted) {
@@ -108,78 +109,88 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Center(child: Image.asset("assets/image/chat.png",color:AppColor.primaryColor,height: 100,width: 100,)),
-            SizedBox(height:20),
-            Text("Chatter",style: TextStyle(
-              color: AppColor.primaryColor,
-              fontSize: 20,
-              fontWeight: FontWeight.bold
-            ),),
-            SizedBox(height: 10,),
+            Center(
+              child: Image.asset(
+                "assets/image/chat.png",
+                color: AppColor.primaryColor,
+                height: 100,
+                width: 100,
+              ),
+            ),
+            SizedBox(height: 20),
+            Text(
+              "Chatter",
+              style: TextStyle(
+                color: AppColor.primaryColor,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 10),
             TextField(
               controller: _emailController,
               decoration: InputDecoration(
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(15),
-                  borderSide: BorderSide.none
+                  borderSide: BorderSide.none,
                 ),
                 enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(15),
-                    borderSide: BorderSide.none
+                  borderRadius: BorderRadius.circular(15),
+                  borderSide: BorderSide.none,
                 ),
-                focusedBorder:OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(15),
-                    borderSide: BorderSide.none
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(15),
+                  borderSide: BorderSide.none,
                 ),
-                  filled: true,
-                  fillColor: Colors.white,
-                prefixIcon: Icon(Icons.email,color:AppColor.primaryColor,),
+                filled: true,
+                fillColor: Colors.white,
+                prefixIcon: Icon(Icons.email, color: AppColor.primaryColor),
                 hintText: "Email",
               ),
             ),
-            SizedBox(height: 5,),
+            SizedBox(height: 5),
             TextField(
               controller: _passwordController,
               decoration: InputDecoration(
                 border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(15),
-                    borderSide: BorderSide.none
+                  borderRadius: BorderRadius.circular(15),
+                  borderSide: BorderSide.none,
                 ),
                 enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(15),
-                    borderSide: BorderSide.none
+                  borderRadius: BorderRadius.circular(15),
+                  borderSide: BorderSide.none,
                 ),
-                focusedBorder:OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(15),
-                    borderSide: BorderSide.none
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(15),
+                  borderSide: BorderSide.none,
                 ),
                 filled: true,
                 fillColor: Colors.white,
-                prefixIcon: Icon(Icons.lock,color: AppColor.primaryColor,),
+                prefixIcon: Icon(Icons.lock, color: AppColor.primaryColor),
                 hintText: "Password",
               ),
             ),
-            SizedBox(height: 20,),
+            SizedBox(height: 20),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColor.primaryColor,
-                minimumSize: Size(double.infinity, 50)
+                minimumSize: Size(double.infinity, 50),
               ),
-                onPressed:_isLoading ? null : Login,
-                child:_isLoading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : Text("SIGNUP",
-              style: TextStyle(
-              color:Colors.white
-            ),)),
-            SizedBox(height: 5,),
+              onPressed: _isLoading ? null : Login,
+              child: _isLoading
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : Text("SIGNUP", style: TextStyle(color: Colors.white)),
+            ),
+            SizedBox(height: 5),
             GestureDetector(
               onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => SignupScreen(),));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => SignupScreen()),
+                );
               },
-                child: Text('or create an account')),
-
-
+              child: Text('or create an account'),
+            ),
           ],
         ),
       ),

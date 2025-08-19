@@ -1,180 +1,246 @@
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
-import 'package:web_socket_app/model/message_model/message_model.dart';
 import 'package:web_socket_app/utils/color.dart';
+import 'chat_screen.dart';
 
+enum MenuOption { onlineUsers, settings, profile }
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
-
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  final FirebaseFirestore _firebaseFirestore = FirebaseFirestore.instance;
-  final _textController = TextEditingController();
-  final _scrollController= ScrollController();
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  final FirebaseDatabase _firebaseDatabase = FirebaseDatabase.instance;
   final User currentUser = FirebaseAuth.instance.currentUser!;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _updateUserStatus(isOnline: true);
+    print("Current user photo URL is: ${currentUser.photoURL}");
+  }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _updateUserStatus(isOnline: true);
+    } else {}
+  }
 
+  void _updateUserStatus({required bool isOnline}) {
+    final userStatusRef = _firebaseDatabase.ref("presence/${currentUser.uid}");
+    final status = {
+      'isOnline': isOnline,
+      'last_seen': ServerValue.timestamp,
+      'email': currentUser.email,
+    };
+    if (isOnline) {
+      userStatusRef.onDisconnect().set({
+        'isOnline': false,
+        'last_seen': ServerValue.timestamp,
+        'email': currentUser.email,
+      });
+    }
+    userStatusRef.set(status);
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        leading: IconButton(onPressed: () {
-        }, icon: Icon(Icons.menu,color: AppColor.primaryColor,)),
+        backgroundColor: AppColor.primaryColor,
+        leading: Builder(
+          builder: (context) => IconButton(
+            onPressed: () {
+              Scaffold.of(context).openDrawer();
+            },
+            icon: Icon(Icons.menu, color: Colors.white),
+          ),
+        ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("Chatter",style: TextStyle(
-              fontSize: 15
-            ),),
-            Text("Chatter",style: TextStyle(
-              fontSize: 8
-            ),),
+            Text(
+              currentUser.email ?? "No Email",
+              style: TextStyle(fontSize: 15, color: Colors.white),
+            ),
+            Text("Online", style: TextStyle(fontSize: 10, color: Colors.white)),
           ],
         ),
-        actions: [
-          IconButton(onPressed: () {
-          }, icon: Icon(Icons.more_vert,color: AppColor.primaryColor,))
-        ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-           child: StreamBuilder<QuerySnapshot>(
-      stream: _firebaseFirestore.collection("message").orderBy("timestamp",descending: true).snapshots(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return Center(child: CircularProgressIndicator());
-            }
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-              return Center(child: Text("No messages yet!"));
-            }
-            final messages = snapshot.data!.docs;
-          return  ListView.builder(
-              controller: _scrollController,
-              reverse: true,
-              padding: EdgeInsets.all(16.0),
-              itemCount: messages.length,
-              itemBuilder: (context, index) {
-                final doc = messages[index];
-                final data = doc.data() as Map<String, dynamic>;
-                final message = Message(
-                  sender: data['sender'],
-                  text: data['text'],
-                  isMe: data['sender'] == currentUser.email,
-                );
-               return _buildMessageBubble(message);
+
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: [
+            _buildOnlineUsersList(),
+            Icon(Icons.chat_bubble_outline, size: 100, color: Colors.grey[200]),
+            SizedBox(height: 20),
+            Text(
+              "Welcome to the Chat App!",
+              style: TextStyle(fontSize: 22, color: Colors.grey[700]),
+            ),
+            SizedBox(height: 10),
+            Text(
+              "Click the menu on the top right to see online users.",
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16, color: Colors.grey[500]),
+            ),
+          ],
+        ),
+      ),
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            UserAccountsDrawerHeader(
+              accountName: Text("",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+              accountEmail: Text(
+                currentUser.email ?? "No Email",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+              currentAccountPicture: CircleAvatar(
+                backgroundImage: (currentUser.photoURL != null && currentUser.photoURL!.isNotEmpty)?NetworkImage(currentUser.photoURL!):null,
+
+              child: (currentUser.photoURL == null || currentUser.photoURL!.isEmpty)
+                  ? Icon(
+                Icons.person,
+                size: 40,
+                color: AppColor.primaryColor,
+              )
+                  : null,
+              ),
+
+              decoration: BoxDecoration(color: AppColor.primaryColor),
+            ),
+            Divider(),
+            SizedBox(height: 30),
+            ListTile(
+              leading: Icon(Icons.exit_to_app),
+              onTap: () async {
+                await FirebaseAuth.instance.signOut();
+                Navigator.pushReplacementNamed(context, '/');
               },
-            );
-          },
-           )
-          ),
-         _buildMessageComposer()
-        ],
+              title: Text("Logout"),
+              subtitle: Text("sign out of this account"),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  // we will be build these helper methods
-  Widget _buildMessageBubble(Message message){
-    final bool isMe = message.isMe;
-    //placeHolder for now
-    return Column(
-      crossAxisAlignment: isMe? CrossAxisAlignment.end:CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 10, right: 10, bottom: 4),
-          child: Text(
-            message.sender,
-            style: const TextStyle(fontSize: 12, color: Colors.black54),
-          ),
-        ),
-        Container(
-          padding: EdgeInsets.symmetric(horizontal: 16,vertical: 10),
-          decoration: BoxDecoration(
-            color: isMe?AppColor.primaryColor:Color(0xFFF1F1F1),
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(20),
-              topRight: const Radius.circular(20),
-              bottomLeft: isMe ? const Radius.circular(20) : Radius.zero,
-              bottomRight: isMe ? Radius.zero : const Radius.circular(20),
-            ),
-          ),
-          child: Text(
-           message.text,style: TextStyle(
-            color: isMe ? Colors.white : Colors.black87,
-            fontSize: 16,
-          ),
-          ),
-        ),
-        const SizedBox(height: 10),
-      ],
-    );
-  }
-  
-  Widget _buildMessageComposer(){
-    return Container(
-      
-      padding: EdgeInsets.symmetric(horizontal: 12.0,vertical: 8.0),
-      color: Colors.white,
-      child: Row(
-        children: [
-          Expanded(child: TextField(
-            controller: _textController,
-            decoration: InputDecoration(
-              hintText: "Type your message here",
-              filled: true,
-              fillColor:  Color(0xFFF1F1F1),
-              contentPadding: EdgeInsets.symmetric(vertical: 10.0,horizontal: 20.0),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(30.0),
-                borderSide: BorderSide.none
-              )
-            ),
-          )
-          ),
-          SizedBox(width: 8.0,),
-          GestureDetector(
-            onTap: () {
-    if(_textController.text.isNotEmpty){
-    _firebaseFirestore.collection("message").add({
-    "text":_textController.text,
-    "sender":currentUser.email,
-    "timestamp":FieldValue.serverTimestamp()
-    });
-    _textController.clear();
-    if (_scrollController.hasClients) {
-    _scrollController.animateTo(
-    0.0,
-    duration: Duration(milliseconds: 300),
-    curve: Curves.easeOut,);
-    }
-    }
-    },
-            child: Container(
-              padding: EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppColor.primaryColor,
-                shape: BoxShape.circle
+  Widget _buildOnlineUsersList() {
+    return SizedBox(
+      height: 100,
+      child: StreamBuilder(
+        stream: _firebaseDatabase.ref('presence').onValue,
+        builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
               ),
-              child: Icon(
-                Icons.send,
-                color: Colors.white,
+            );
+          }
+          if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
+            return Center(child: Text("No users online"));
+          }
+
+          final data = Map<String, dynamic>.from(
+            snapshot.data!.snapshot.value as Map,
+          );
+          final onlineUsers = <Map<String, dynamic>>[];
+
+          data.forEach((key, value) {
+            if (value['isOnline'] == true && key != currentUser.uid) {
+              onlineUsers.add({
+                'uid': key,
+                'email': value['email'] ?? 'No Email',
+              });
+            }
+          });
+
+          if (onlineUsers.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Text(
+                  "No other users are currently online.",
+                  style: TextStyle(color: Colors.grey),
+                ),
               ),
-            ),
-          )
-        ],
+            );
+          }
+
+          return ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: onlineUsers.length,
+            itemBuilder: (context, index) {
+              final user = onlineUsers[index];
+              final email = user['email'];
+              final uid = user['uid'];
+
+              return GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          ChatScreen(receiverEmail: email, receiverID: uid),
+                    ),
+                  );
+                },
+                child: Container(
+                  width: 80,
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 10,
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircleAvatar(
+                        radius: 25,
+                        backgroundColor: AppColor.primaryColor,
+                        child: Icon(Icons.person, color: Colors.white),
+                      ),
+                      SizedBox(height: 5),
+                      Text(
+                        email.split('@')[0],
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }
-  
-  
 }
