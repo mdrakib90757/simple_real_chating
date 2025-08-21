@@ -1,7 +1,9 @@
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:web_socket_app/notification_handle/notificationHandle.dart';
 import 'package:web_socket_app/utils/color.dart';
 import 'chat_screen.dart';
 
@@ -15,13 +17,19 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final FirebaseDatabase _firebaseDatabase = FirebaseDatabase.instance;
   final User currentUser = FirebaseAuth.instance.currentUser!;
+
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _updateUserStatus(isOnline: true);
     print("Current user photo URL is: ${currentUser.photoURL}");
+    final notificationHandler = NotificationHandler(context);
+    notificationHandler.initFirebaseMessaging();
+    getFCMToken();
   }
+
 
   @override
   void dispose() {
@@ -35,7 +43,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _updateUserStatus(isOnline: true);
     } else {}
   }
-
   void _updateUserStatus({required bool isOnline}) {
     final userStatusRef = _firebaseDatabase.ref("presence/${currentUser.uid}");
     final status = {
@@ -51,6 +58,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       });
     }
     userStatusRef.set(status);
+  }
+  void getFCMToken() async {
+    FirebaseMessaging messaging = FirebaseMessaging.instance;
+    String? token = await messaging.getToken();
+    print("FCM Token: $token");
   }
 
   @override
@@ -84,7 +96,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           mainAxisAlignment: MainAxisAlignment.start,
           children: [
             _buildOnlineUsersList(),
-
             Icon(Icons.chat_bubble_outline, size: 80, color: Colors.grey[200]),
             SizedBox(height: 20),
             Text(

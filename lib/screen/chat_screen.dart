@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -12,13 +12,11 @@ import 'package:web_socket_app/utils/color.dart';
 class ChatScreen extends StatefulWidget {
   final String receiverEmail;
   final String receiverID;
-
   const ChatScreen({
     super.key,
     required this.receiverEmail,
     required this.receiverID,
   });
-
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
@@ -26,6 +24,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final FirebaseFirestore _firebaseFirestore = FirebaseFirestore.instance;
   final FirebaseStorage _firebaseStorage = FirebaseStorage.instance;
+  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
   final User currentUser = FirebaseAuth.instance.currentUser!;
@@ -40,51 +39,14 @@ class _ChatScreenState extends State<ChatScreen> {
     chatRoomId = ids.join('_');
   }
 
-  /*
-  Future<void>_sendImage()async{
-    final ImagePicker picker=ImagePicker();
-    final XFile? image=await picker.pickImage(source: ImageSource.gallery);
-
-    if(image != null){
-      setState(() {
-        _isUploading=true;
-      });
-      File imageFile=File(image.path);
-
-      try{
-        String fileName = DateTime.now().microsecondsSinceEpoch.toString();
-        Reference ref = _firebaseStorage.ref().child("chat_image").child(chatRoomId).child(fileName);
-
-        UploadTask uploadTask=ref.putFile(imageFile);
-        TaskSnapshot snapshot = await uploadTask;
-
-        String downloadUrl=await snapshot.ref.getDownloadURL();
-
-        await _firebaseFirestore.collection("chat_rooms")
-        .doc(chatRoomId)
-        .collection("messages")
-        .add({
-          "text":null,
-          "imageUrl":downloadUrl,
-          "type":"image",
-          "senderId":currentUser.uid,
-          "senderEmail":currentUser.email,
-          "timestamp":FieldValue.serverTimestamp()
-        });
-      }catch(e){
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("image send problem $e")),
-        );
-      }finally {
-        setState(() {
-          _isUploading = false;
-        });
-      }
-    }
-
-  }
-
-*/
+  void requestPermission()async{
+    NotificationSettings settings = await _messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true
+    );
+    print('User granted permission: ${settings.authorizationStatus}');
+}
   Future<void> _sendImage() async {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
@@ -93,10 +55,8 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {
         _isUploading = true;
       });
-
       const String cloudName = "dlqufneob";
       const String uploadPreset = "chat_app_unsigned";
-
       final url = Uri.parse(
         "https://api.cloudinary.com/v1_1/$cloudName/image/upload",
       );
@@ -124,6 +84,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 "type": "image",
                 "senderId": currentUser.uid,
                 "senderEmail": currentUser.email,
+            "receiverId": widget.receiverID,
                 "timestamp": FieldValue.serverTimestamp(),
               });
         } else {
@@ -155,6 +116,8 @@ class _ChatScreenState extends State<ChatScreen> {
             "type": "text",
             "senderId": currentUser.uid,
             "senderEmail": currentUser.email,
+        "receiverId": widget.receiverID,
+
             "timestamp": FieldValue.serverTimestamp(),
           });
       _textController.clear();
