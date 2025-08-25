@@ -2,72 +2,75 @@
 
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
+
 admin.initializeApp();
+const db = admin.firestore();
 
 
-exports.sendChatNotification = functions.firestore
-    .document("chat_rooms/{chatRoomId}/messages/{messageId}")
-    .onCreate(async (snapshot, context) => {
-      const messageData = snapshot.data();
+exports.sendNotificationOnMessage = functions.firestore
+  .document("chats/{chatId}/messages/{messageId}")
+  .onCreate(async (snap, context) => {
+    const message = snap.data();
+    const senderId = message.senderId;
+    const receiverId = message.receiverId;
+    const messageText = message.text || "";
 
-      const senderId = messageData.senderId;
-      const receiverId = messageData.receiverId;
-      const senderEmail = messageData.senderEmail;
-      const messageText = messageData.text;
+    console.log("📩 New message:", message);
 
-      if (!receiverId) {
-        console.log("Receiver ID is missing. Cannot send notification.");
-        return null;
-      }
-
-      if (senderId === receiverId) {
-        console.log("Sender is the same as receiver. No notification needed.");
-        return null;
-      }
-
-      // eslint-disable-next-line max-len
-      const receiverDocRef = admin.firestore().collection("users").doc(receiverId);
-      const receiverDoc = await receiverDocRef.get();
-
-      if (!receiverDoc.exists) {
-        console.log("Receiver user document not found:", receiverId);
-        return null;
-      }
-
-      const fcmToken = receiverDoc.data().fcmToken;
-
-      if (!fcmToken) {
-        console.log("Receiver FCM token not found for user:", receiverId);
-        return null;
-      }
-
-      const payload = {
-        token: fcmToken,
-        notification: {
-          title: `New message from ${senderEmail}`,
-          body: messageText || "You received an image.",
-        },
-        data: {
-          senderEmail: senderEmail,
-          senderID: senderId,
-          message_body: messageText || "Image",
-        },
-        android: {
-          priority: "high",
-          notification: {
-            channel_id: "high_importance_channel",
-          },
-        },
-      };
-
-      try {
-        console.log("Sending notification to token:", fcmToken);
-        const response = await admin.messaging().send(payload);
-        console.log("Successfully sent notification:", response);
-        return response;
-      } catch (error) {
-        console.error("Error sending notification:", error);
-        return null;
-      }
-    });
     
+    let senderEmail = "Unknown";
+    try {
+      const senderDoc = await db.collection("users").doc(senderId).get();
+      if (senderDoc.exists) {
+        senderEmail = senderDoc.data().email || "Unknown";
+      }
+    } catch (e) {
+      console.error("❌ Error fetching sender info:", e);
+    }
+
+    
+    const receiverDoc = await db.collection("users").doc(receiverId).get();
+    if (!receiverDoc.exists) {
+      console.log("⚠️ No such receiver:", receiverId);
+      return null;
+    }
+
+    const fcmTokens = receiverDoc.data().fcmTokens || [];
+    if (fcmTokens.length === 0) {
+      console.log("⚠️ No FCM tokens for receiver:", receiverId);
+      return null;
+    }
+
+    
+    const payload = {
+      notification: {
+        title: `Message from ${senderEmail}`,
+        body: messageText || "📷 Sent you an image",
+      },
+      data: {
+        senderEmail: senderEmail,
+        senderID: senderId,
+        message_body: messageText || "Image",
+      },
+      android: {
+        priority: "high",
+        notification: {
+          channel_id: "high_importance_channel",
+        },
+      },
+    };
+
+    try {
+      const response = await admin.messaging().sendEachForMulticast({
+        tokens: fcmTokens,
+        notification: payload.notification,
+        data: payload.data,
+        android: payload.android,
+      });
+      console.log("✅ Notification sent:", response);
+      return response;
+    } catch (error) {
+      console.error("❌ Error sending notification:", error);
+      return null;
+    }
+  });

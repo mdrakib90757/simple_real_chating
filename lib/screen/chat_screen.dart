@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -8,20 +9,26 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:web_socket_app/model/message_model/message_model.dart';
 import 'package:web_socket_app/utils/color.dart';
+import '../ChatService/chatService.dart';
 
 class ChatScreen extends StatefulWidget {
   final String receiverEmail;
   final String receiverID;
+  final String currentUserId; // sender
+  final String receiverUserId; // receiver
   const ChatScreen({
     super.key,
     required this.receiverEmail,
     required this.receiverID,
+    required this.currentUserId,
+    required this.receiverUserId,
   });
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  final ChatService chatService = ChatService();
   final FirebaseFirestore _firebaseFirestore = FirebaseFirestore.instance;
   final FirebaseStorage _firebaseStorage = FirebaseStorage.instance;
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
@@ -34,100 +41,72 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    List<String> ids = [currentUser.uid, widget.receiverID];
+    List<String> ids = [currentUser.uid, widget.receiverID]..sort();
     ids.sort();
     chatRoomId = ids.join('_');
+    _messaging.requestPermission(alert: true, badge: true, sound: true);
+
+    // Foreground message listener
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      if (message.notification != null) {
+        print("🔔 Foreground notification: ${message.notification!.body}");
+      }
+    });
   }
 
-  void requestPermission()async{
-    NotificationSettings settings = await _messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true
-    );
-    print('User granted permission: ${settings.authorizationStatus}');
-}
-  Future<void> _sendImage() async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-
-    if (image != null) {
-      setState(() {
-        _isUploading = true;
-      });
-      const String cloudName = "dlqufneob";
-      const String uploadPreset = "chat_app_unsigned";
-      final url = Uri.parse(
-        "https://api.cloudinary.com/v1_1/$cloudName/image/upload",
-      );
-
-      try {
-        final request = http.MultipartRequest('POST', url)
-          ..fields['upload_preset'] = uploadPreset
-          ..files.add(await http.MultipartFile.fromPath('file', image.path));
-
-        final response = await request.send();
-
-        if (response.statusCode == 200) {
-          final responseData = await response.stream.toBytes();
-          final responseString = String.fromCharCodes(responseData);
-          final jsonMap = json.decode(responseString);
-
-          final String downloadUrl = jsonMap['secure_url'];
-          await _firebaseFirestore
-              .collection("chat_rooms")
-              .doc(chatRoomId)
-              .collection("messages")
-              .add({
-                "text": null,
-                "imageUrl": downloadUrl,
-                "type": "image",
-                "senderId": currentUser.uid,
-                "senderEmail": currentUser.email,
-            "receiverId": widget.receiverID,
-                "timestamp": FieldValue.serverTimestamp(),
-              });
-        } else {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text("image upload failed")));
-        }
-      } catch (e) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("image update problem: $e")));
-      } finally {
-        setState(() {
-          _isUploading = false;
-        });
-      }
+  Future<void> _sendMessage({String? text, String? imageUrl}) async {
+    // String text = _textController.text.trim();
+    // if (text.isEmpty) return;
+    final String currentText = text ?? _textController.text.trim();
+    if (currentText.isEmpty && (imageUrl == null || imageUrl.isEmpty)) {
+      print("Cannot send an empty message.");
+      return;
     }
+    _textController.clear();
+
+    await chatService.sendMessage(
+      context: context,
+      senderId: currentUser.uid,
+      receiverId: widget.receiverUserId,
+      message: currentText.isNotEmpty ? currentText : null,
+      imageUrl: imageUrl,
+    );
   }
 
-  void _sendTextMessage() {
-    if (_textController.text.isNotEmpty) {
-      _firebaseFirestore
-          .collection("chat_rooms")
-          .doc(chatRoomId)
-          .collection("messages")
-          .add({
-            "text": _textController.text,
-            "imageUrl": null,
-            "type": "text",
-            "senderId": currentUser.uid,
-            "senderEmail": currentUser.email,
-        "receiverId": widget.receiverID,
+  Future<void> _sendImage() async {
+    final picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    if (image == null) return;
 
-            "timestamp": FieldValue.serverTimestamp(),
-          });
-      _textController.clear();
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          0.0,
-          duration: Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+    setState(() => _isUploading = true);
+
+    const String cloudName = "dlqufneob";
+    const String uploadPreset = "chat_app_unsigned";
+    final url = Uri.parse(
+      "https://api.cloudinary.com/v1_1/$cloudName/image/upload",
+    );
+
+    try {
+      final request = http.MultipartRequest('POST', url)
+        ..fields['upload_preset'] = uploadPreset
+        ..files.add(await http.MultipartFile.fromPath('file', image.path));
+
+      final response = await request.send();
+
+      if (response.statusCode == 200) {
+        final responseData = await response.stream.bytesToString();
+        final jsonMap = json.decode(responseData);
+        final imageUrl = jsonMap['secure_url'];
+
+
+        await _sendMessage(imageUrl: imageUrl);
+      } else {
+        print("Image upload failed with status: ${response.statusCode}");
       }
+    } catch (e) {
+      print("Error uploading image: $e");
+    } finally {
+      setState(() => _isUploading = false);
     }
   }
 
@@ -279,7 +258,7 @@ class _ChatScreenState extends State<ChatScreen> {
           SizedBox(width: 8.0),
           GestureDetector(
             onTap: () {
-              _sendTextMessage();
+              _sendMessage(text: _textController.text);
             },
             child: Container(
               padding: EdgeInsets.all(15),

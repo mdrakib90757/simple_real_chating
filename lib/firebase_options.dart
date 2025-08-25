@@ -85,5 +85,4 @@ class DefaultFirebaseOptions {
     storageBucket: 'real-time-messaging-9b660.firebasestorage.app',
     measurementId: 'G-X0QZQYZTFV',
   );
-
 }

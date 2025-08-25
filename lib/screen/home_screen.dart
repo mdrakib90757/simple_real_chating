@@ -1,13 +1,18 @@
+import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
-import 'package:web_socket_app/notification_handle/notificationHandle.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:web_socket_app/utils/color.dart';
+
+import '../main.dart';
 import 'chat_screen.dart';
 
 enum MenuOption { onlineUsers, settings, profile }
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
   @override
@@ -17,7 +22,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final FirebaseDatabase _firebaseDatabase = FirebaseDatabase.instance;
   final User currentUser = FirebaseAuth.instance.currentUser!;
-
+  String? _currentToken;
 
   @override
   void initState() {
@@ -25,11 +30,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _updateUserStatus(isOnline: true);
     print("Current user photo URL is: ${currentUser.photoURL}");
-    final notificationHandler = NotificationHandler(context);
-    notificationHandler.initFirebaseMessaging();
-    getFCMToken();
+    _initializeUserAndNotifications();
   }
-
 
   @override
   void dispose() {
@@ -43,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _updateUserStatus(isOnline: true);
     } else {}
   }
+
   void _updateUserStatus({required bool isOnline}) {
     final userStatusRef = _firebaseDatabase.ref("presence/${currentUser.uid}");
     final status = {
@@ -59,10 +62,155 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
     userStatusRef.set(status);
   }
-  void getFCMToken() async {
-    FirebaseMessaging messaging = FirebaseMessaging.instance;
-    String? token = await messaging.getToken();
-    print("FCM Token: $token");
+
+  void _initializeUserAndNotifications() async {
+    _updateUserStatus(isOnline: true);
+    await createUserIfNotExists();
+    await saveFCMToken();
+    _setupFirebaseListeners();
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      print("--- FOREGROUND MESSAGE RECEIVED ---");
+      RemoteNotification? notification = message.notification;
+      AndroidNotification? android = message.notification?.android;
+
+      if (notification != null && android != null) {
+        // Show heads-up notification
+        flutterLocalNotificationsPlugin.show(
+          notification.hashCode,
+          notification.title,
+          notification.body,
+          NotificationDetails(
+            android: AndroidNotificationDetails(
+              channel.id,
+              channel.name,
+              channelDescription: channel.description,
+              icon: 'ic_stat_notification_bell',
+              importance: Importance.high,
+              priority: Priority.high,
+            ),
+          ),
+          payload: jsonEncode(message.data),
+        );
+      }
+
+      // 🔹 Auto navigate in foreground
+      _handleNavigation(message.data, context: context, isForeground: true);
+    });
+
+    // 🔹 Background / terminated state
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      print("--- Notification tapped from background ---");
+      _handleNavigation(message.data);
+    });
+
+    FirebaseMessaging.instance.getInitialMessage().then((
+      RemoteMessage? message,
+    ) {
+      if (message != null) {
+        print("--- App opened from terminated state ---");
+        Future.delayed(const Duration(seconds: 1), () {
+          _handleNavigation(message.data);
+        });
+      }
+    });
+  }
+
+  void _setupFirebaseListeners() {
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      print("--- FOREGROUND MESSAGE RECEIVED ---");
+      RemoteNotification? notification = message.notification;
+      AndroidNotification? android = message.notification?.android;
+
+      if (notification != null && android != null) {
+        flutterLocalNotificationsPlugin.show(
+          notification.hashCode,
+          notification.title,
+          notification.body,
+          NotificationDetails(
+            android: AndroidNotificationDetails(
+              channel.id,
+              channel.name,
+              channelDescription: channel.description,
+              icon: 'ic_stat_notification_bell',
+              importance: Importance.high,
+              priority: Priority.high,
+            ),
+          ),
+          payload: jsonEncode(message.data),
+        );
+      }
+      _handleNavigation(message.data);
+    });
+
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      print('--- NOTIFICATION TAPPED FROM BACKGROUND ---');
+      _handleNavigation(message.data);
+    });
+
+    FirebaseMessaging.instance.getInitialMessage().then((
+      RemoteMessage? message,
+    ) {
+      if (message != null) {
+        print('--- APP OPENED FROM TERMINATED STATE ---');
+        Future.delayed(const Duration(seconds: 1), () {
+          _handleNavigation(message.data);
+        });
+      }
+    });
+  }
+
+  Future<void> saveFCMToken() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final token = await FirebaseMessaging.instance.getToken();
+    if (token != null) {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'fcmTokens': FieldValue.arrayUnion([token]),
+      }, SetOptions(merge: true));
+
+      print("✅ FCM token saved for user: ${user.uid}");
+    }
+  }
+
+  /// Create Firestore user if not exists
+  Future<void> createUserIfNotExists() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get();
+    if (!userDoc.exists) {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'email': user.email,
+        'fcmTokens': [],
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      print("✅ User created in Firestore: ${user.uid}");
+    }
+  }
+
+  void _handleNavigation(
+    Map<String, dynamic> data, {
+    BuildContext? context,
+    bool isForeground = false,
+  }) {
+    final senderEmail = data['senderEmail'];
+    final senderID = data['senderID'];
+
+    if (senderEmail != null && senderID != null) {
+      final route = MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          receiverEmail: senderEmail,
+          receiverID: senderID,
+          currentUserId: FirebaseAuth.instance.currentUser!.uid,
+          receiverUserId: senderID,
+        ),
+      );
+      navigatorKey.currentState?.push(route);
+    }
   }
 
   @override
@@ -116,7 +264,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           padding: EdgeInsets.zero,
           children: [
             UserAccountsDrawerHeader(
-              accountName: Text("",
+              accountName: Text(
+                "",
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 18,
@@ -132,15 +281,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ),
               currentAccountPicture: CircleAvatar(
-                backgroundImage: (currentUser.photoURL != null && currentUser.photoURL!.isNotEmpty)?NetworkImage(currentUser.photoURL!):null,
+                backgroundImage:
+                    (currentUser.photoURL != null &&
+                        currentUser.photoURL!.isNotEmpty)
+                    ? NetworkImage(currentUser.photoURL!)
+                    : null,
 
-              child: (currentUser.photoURL == null || currentUser.photoURL!.isEmpty)
-                  ? Icon(
-                Icons.person,
-                size: 40,
-                color: AppColor.primaryColor,
-              )
-                  : null,
+                child:
+                    (currentUser.photoURL == null ||
+                        currentUser.photoURL!.isEmpty)
+                    ? Icon(Icons.person, size: 40, color: AppColor.primaryColor)
+                    : null,
               ),
 
               decoration: BoxDecoration(color: AppColor.primaryColor),
@@ -216,12 +367,35 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               final uid = user['uid'];
 
               return GestureDetector(
-                onTap: () {
+                onTap: () async {
+                  // Firestore check before navigating
+                  final userDoc = await FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(uid)
+                      .get();
+
+                  if (!userDoc.exists) {
+                    // Optionally create user in Firestore
+                    await FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(uid)
+                        .set({
+                          'email': email,
+                          'fcmTokens': [],
+                          'createdAt': FieldValue.serverTimestamp(),
+                        });
+                    print("✅ Receiver user created in Firestore: $uid");
+                  }
+
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) =>
-                          ChatScreen(receiverEmail: email, receiverID: uid),
+                      builder: (context) => ChatScreen(
+                        receiverEmail: email,
+                        receiverID: uid,
+                        currentUserId: currentUser.uid,
+                        receiverUserId: uid,
+                      ),
                     ),
                   );
                 },

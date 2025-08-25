@@ -1,4 +1,6 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:web_socket_app/screen/home_screen.dart';
 import 'package:web_socket_app/screen/auth_screen/signup_screen.dart';
@@ -47,6 +49,16 @@ class _LoginScreenState extends State<LoginScreen> {
         await user.reload();
         user = _auth.currentUser;
         if (user!.emailVerified) {
+          // ✅ FCM token fetch & save
+          String? fcmToken = await FirebaseMessaging.instance.getToken();
+          if (fcmToken != null) {
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .set({'fcmToken': fcmToken}, SetOptions(merge: true));
+            print("✅ FCM token saved: $fcmToken");
+          }
+
           if (mounted) {
             Navigator.pushAndRemoveUntil(
               context,
@@ -181,7 +193,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ? const CircularProgressIndicator(color: Colors.white)
                   : Text("SIGNUP", style: TextStyle(color: Colors.white)),
             ),
-            SizedBox(height: 5),
+            SizedBox(height: 15),
             GestureDetector(
               onTap: () {
                 Navigator.push(

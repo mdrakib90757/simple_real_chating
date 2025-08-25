@@ -1,35 +1,60 @@
+import 'dart:convert';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:web_socket_app/firebase_options.dart';
 import 'package:web_socket_app/screen/auth_screen/signIn_screen.dart';
+import 'package:web_socket_app/screen/chat_screen.dart';
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   print("Background Message: ${message.messageId}");
 }
+
 const AndroidNotificationChannel channel = AndroidNotificationChannel(
   'high_importance_channel',
   'High Importance Notifications',
   description: 'This channel is used for important notifications.',
+
   importance: Importance.high,
 );
+
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-FlutterLocalNotificationsPlugin();
+    FlutterLocalNotificationsPlugin();
 
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-void main() async{
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   await flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<
-      AndroidFlutterLocalNotificationsPlugin>()
+        AndroidFlutterLocalNotificationsPlugin
+      >()
       ?.createNotificationChannel(channel);
+
+  // 🔹 Initialize local notifications
+  const AndroidInitializationSettings androidInit =
+      AndroidInitializationSettings('ic_stat_notification_bell');
+
+  final InitializationSettings initializationSettings = InitializationSettings(
+    android: androidInit,
+  );
+
+  await flutterLocalNotificationsPlugin.initialize(
+    initializationSettings,
+    onDidReceiveNotificationResponse: (NotificationResponse response) {
+      if (response.payload != null) {
+        final data = jsonDecode(response.payload!);
+        _handleNavigation(data);
+      }
+    },
+  );
 
   await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
     alert: true,
@@ -46,13 +71,85 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-        title: 'Flutter Demo',
+      navigatorKey: navigatorKey,
+      title: 'Flutter Demo',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-      ),
-      home:LoginScreen()
+      theme: ThemeData(),
+      home: LoginScreen(),
     );
   }
 }
 
+String? _currentChatUserId;
 
+/// 🔹 Foreground message listener setup (call this from HomeScreen initState)
+void setupFirebaseListeners() {
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    print("--- Foreground Message ---");
+    RemoteNotification? notification = message.notification;
+    AndroidNotification? android = message.notification?.android;
+
+    if (notification != null) {
+      // Show heads-up local notification
+      flutterLocalNotificationsPlugin.show(
+        notification.hashCode,
+        notification.title,
+        notification.body,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            channel.id,
+            channel.name,
+            channelDescription: channel.description,
+            importance: Importance.high,
+            priority: Priority.high,
+            playSound: true,
+            icon: 'ic_stat_notification_bell',
+          ),
+        ),
+        payload: jsonEncode(message.data),
+      );
+
+      // 🔹 Auto navigate immediately
+      _handleNavigation(message.data);
+    }
+  });
+
+  // 🔹 App opened from background by tapping notification
+  FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+    print("--- Notification tapped from background ---");
+    _handleNavigation(message.data);
+  });
+  // 🔹 App opened from terminated state
+  FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
+    if (message != null) {
+      print("--- App opened from terminated state ---");
+      Future.delayed(const Duration(seconds: 1), () {
+        _handleNavigation(message.data);
+      });
+    }
+  });
+}
+
+/// 🔹 Navigate to chat screen
+void _handleNavigation(Map<String, dynamic> data) {
+  final senderEmail = data['senderEmail'];
+  final senderID = data['senderID'];
+
+  if (senderEmail != null && senderID != null) {
+    // Prevent duplicate navigation if already in this chat
+    if (_currentChatUserId == senderID) return;
+
+    _currentChatUserId = senderID;
+
+    final route = MaterialPageRoute(
+      builder: (_) => ChatScreen(
+        receiverEmail: senderEmail,
+        receiverID: senderID,
+        currentUserId: FirebaseAuth.instance.currentUser!.uid,
+        receiverUserId: senderID,
+      ),
+    );
+
+    navigatorKey.currentState?.push(route);
+  }
+}

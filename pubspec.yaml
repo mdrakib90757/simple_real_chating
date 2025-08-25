@@ -44,6 +44,8 @@ dependencies:
   device_preview: ^1.1.0
   firebase_messaging: ^16.0.0
   flutter_local_notifications:
+  googleapis_auth: ^1.6.0
+  uuid: ^4.5.0
 
 
 dev_dependencies:

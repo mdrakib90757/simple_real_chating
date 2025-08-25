@@ -1,4 +1,6 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:web_socket_app/screen/auth_screen/email_verification_screen.dart';
 import 'package:web_socket_app/utils/color.dart';
@@ -40,22 +42,34 @@ class _SignupScreenState extends State<SignupScreen> {
           .createUserWithEmailAndPassword(email: email, password: password);
       User? user = userCredential.user;
       if (user != null) {
-        await user.sendEmailVerification();
+        // ✅ Save FCM token
+        String? fcmToken = await FirebaseMessaging.instance.getToken();
+        if (fcmToken != null) {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .set({
+                'fcmToken': fcmToken,
+                'email': email,
+              }, SetOptions(merge: true));
+          print("✅ FCM token saved: $fcmToken");
+          await user.sendEmailVerification();
 
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                "Registration Successful send email verification link",
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  "Registration Successful send email verification link",
+                ),
               ),
-            ),
-          );
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const EmailVerificationScreen(),
-            ),
-          );
+            );
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const EmailVerificationScreen(),
+              ),
+            );
+          }
         }
       }
     } on FirebaseAuthException catch (e) {

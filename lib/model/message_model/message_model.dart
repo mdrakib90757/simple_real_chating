@@ -1,6 +1,4 @@
-
-
-class Message{
+class Message {
   final String sender;
   final String? text;
   final String? imageUrl;
@@ -9,9 +7,19 @@ class Message{
 
   Message({
     required this.sender,
-     this.text,
+    this.text,
     this.imageUrl,
     required this.isMe,
-    required this.type
-});
+    required this.type,
+  });
+
+  factory Message.fromMap(Map<String, dynamic> data, String currentUserEmail) {
+    return Message(
+      sender: data['sender']?.toString() ?? "Unknown user",
+      text: data['text']?.toString(),
+      imageUrl: data['imageUrl']?.toString(),
+      type: data['type']?.toString() ?? "text",
+      isMe: data['sender']?.toString() == currentUserEmail,
+    );
+  }
 }
