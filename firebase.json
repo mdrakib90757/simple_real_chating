@@ -1,0 +1,38 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "real-time-messaging-9b660",
+          "appId": "1:985581212942:android:becca1ca9ad8fe8e8af35f",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "real-time-messaging-9b660",
+          "configurations": {
+            "android": "1:985581212942:android:becca1ca9ad8fe8e8af35f",
+            "ios": "1:985581212942:ios:01394c3e12c76fcd8af35f",
+            "macos": "1:985581212942:ios:01394c3e12c76fcd8af35f",
+            "web": "1:985581212942:web:4315cd9dfc9fb94a8af35f",
+            "windows": "1:985581212942:web:8bf5a78b7376090b8af35f"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    }
+  ]
+}
