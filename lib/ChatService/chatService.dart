@@ -30,10 +30,8 @@ class ChatService {
     String? imageUrl,
     String? type,
   }) async {
-    final receiverDoc = await _firestore
-        .collection('users')
-        .doc(receiverId)
-        .get();
+    final receiverDoc =
+        await _firestore.collection('users').doc(receiverId).get();
     if (!receiverDoc.exists) return;
     final senderEmail = FirebaseAuth.instance.currentUser?.email;
     if (senderEmail == null) {
@@ -46,8 +44,7 @@ class ChatService {
     final chatRoom = chatRoomId.join('_');
 
     final senderDoc = await _firestore.collection('users').doc(senderId).get();
-    final senderName =
-        senderDoc.data()?['name'] ??
+    final senderName = senderDoc.data()?['name'] ??
         FirebaseAuth.instance.currentUser?.email ??
         "Unknown User";
 
@@ -56,15 +53,15 @@ class ChatService {
         .doc(chatRoom)
         .collection('messages')
         .add({
-          'text': message,
-          'imageUrl': imageUrl,
-          'type': type??(imageUrl != null ? 'image' : 'text'),
-          'senderId': senderId,
-          'receiverId': receiverId,
-          'timestamp': FieldValue.serverTimestamp(),
-          'senderEmail': FirebaseAuth.instance.currentUser?.email ?? "",
-          'senderName': senderName,
-        });
+      'text': message,
+      'imageUrl': imageUrl,
+      'type': type ?? (imageUrl != null ? 'image' : 'text'),
+      'senderId': senderId,
+      'receiverId': receiverId,
+      'timestamp': FieldValue.serverTimestamp(),
+      'senderEmail': FirebaseAuth.instance.currentUser?.email ?? "",
+      'senderName': senderName,
+    });
 
     // Send push notification to all tokens
     final notifier = NotificationHandler(context);

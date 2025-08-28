@@ -57,25 +57,22 @@ class _CameraScreenState extends State<CameraScreen> {
       enableAudio: true,
     );
 
-    _initializeControllerFuture = _controller!
-        .initialize()
-        .then((_) async {
-          await _controller!.setFlashMode(
-            _isFlashOn ? FlashMode.torch : FlashMode.off,
-          );
-          return null;
-        })
-        .catchError((error) {
-          print(': $error');
-          _controller = null;
-          _initializeControllerFuture = null;
-          if (mounted) {
-            setState(() {});
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Camera initialization error')),
-            );
-          }
-        });
+    _initializeControllerFuture = _controller!.initialize().then((_) async {
+      await _controller!.setFlashMode(
+        _isFlashOn ? FlashMode.torch : FlashMode.off,
+      );
+      return null;
+    }).catchError((error) {
+      print(': $error');
+      _controller = null;
+      _initializeControllerFuture = null;
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Camera initialization error')),
+        );
+      }
+    });
 
     if (mounted) setState(() {});
   }
@@ -321,7 +318,7 @@ class DisplayPictureScreen extends StatefulWidget {
   final Function(String)? onSend;
 
   const DisplayPictureScreen({Key? key, required this.imagePath, this.onSend})
-    : super(key: key);
+      : super(key: key);
 
   @override
   State<DisplayPictureScreen> createState() => _DisplayPictureScreenState();
@@ -365,7 +362,7 @@ class DisplayVideoScreen extends StatefulWidget {
   final String videoPath;
   final Function(String)? onSend;
   const DisplayVideoScreen({Key? key, required this.videoPath, this.onSend})
-    : super(key: key);
+      : super(key: key);
 
   @override
   _DisplayVideoScreenState createState() => _DisplayVideoScreenState();
@@ -442,7 +439,6 @@ class _DisplayVideoScreenState extends State<DisplayVideoScreen> {
                     });
                   },
                 ),
-
                 CircleAvatar(
                   radius: 25,
                   backgroundColor: AppColor.primaryColor,

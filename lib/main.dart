@@ -35,8 +35,7 @@ void main() async {
 
   await flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin
-      >()
+          AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
 
   // 🔹 Initialize local notifications
@@ -149,7 +148,7 @@ void _handleNavigation(Map<String, dynamic> data) {
       return;
     }
 
-    Future.delayed(const Duration(milliseconds: 900),(){
+    Future.delayed(const Duration(milliseconds: 900), () {
       try {
         if (navigatorKey.currentState != null) {
           print("Navigator state is valid. Pushing ChatScreen...");
@@ -166,7 +165,6 @@ void _handleNavigation(Map<String, dynamic> data) {
         } else {
           print("Navigator not ready yet, scheduling again...");
           _handleNavigation(data);
-
         }
       } catch (e) {
         print("Navigation error Error ${e}");

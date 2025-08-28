@@ -137,7 +137,6 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                 color: AppColor.primaryColor,
               ),
               const SizedBox(height: 30),
-
               const Text(
                 "Check Your Mailbox",
                 style: TextStyle(
@@ -147,7 +146,6 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                 ),
               ),
               const SizedBox(height: 15),
-
               Text(
                 "We have sent a verification link to your email address:",
                 textAlign: TextAlign.center,
@@ -164,7 +162,6 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                 ),
               ),
               const SizedBox(height: 30),
-
               CircularProgressIndicator(
                 strokeWidth: 2.5,
                 color: AppColor.primaryColor,
@@ -198,7 +195,6 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                 ),
               ),
               const SizedBox(height: 15),
-
               TextButton(
                 onPressed: () async {
                   await _auth.signOut();
@@ -207,7 +203,6 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                     context,
                   ).pushNamedAndRemoveUntil('/', (route) => false);
                 },
-
                 child: Text(
                   "Use a different email",
                   style: TextStyle(color: Colors.grey[600]),

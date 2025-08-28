@@ -234,7 +234,6 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
           ),
-
           _buildMessageComposer(),
         ],
       ),
@@ -253,9 +252,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _buildMessageBubble(Message message) {
     final bool isMe = message.isMe;
     return Column(
-      crossAxisAlignment: isMe
-          ? CrossAxisAlignment.end
-          : CrossAxisAlignment.start,
+      crossAxisAlignment:
+          isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.only(left: 10, right: 10, bottom: 4),
@@ -301,52 +299,52 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 )
               : message.type == "video"
-              ? GestureDetector(
-                  onTap: () {
-                    if (message.imageUrl != null) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => DisplayVideoScreen(
-                            videoPath: message.imageUrl!,
-                            onSend: (_) {},
-                          ),
+                  ? GestureDetector(
+                      onTap: () {
+                        if (message.imageUrl != null) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => DisplayVideoScreen(
+                                videoPath: message.imageUrl!,
+                                onSend: (_) {},
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(15.0),
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Image.network(
+                              getVideoThumbnail(message.imageUrl ?? ""),
+                              height: 200,
+                              width: 200,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                height: 200,
+                                width: 200,
+                                color: Colors.black26,
+                              ),
+                            ),
+                            Icon(
+                              Icons.play_circle_fill,
+                              size: 50,
+                              color: Colors.white,
+                            ),
+                          ],
                         ),
-                      );
-                    }
-                  },
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(15.0),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Image.network(
-                          getVideoThumbnail(message.imageUrl ?? ""),
-                          height: 200,
-                          width: 200,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            height: 200,
-                            width: 200,
-                            color: Colors.black26,
-                          ),
-                        ),
-                        Icon(
-                          Icons.play_circle_fill,
-                          size: 50,
-                          color: Colors.white,
-                        ),
-                      ],
+                      ),
+                    )
+                  : Text(
+                      message.text ?? "",
+                      style: TextStyle(
+                        color: isMe ? Colors.white : Colors.black87,
+                        fontSize: 16,
+                      ),
                     ),
-                  ),
-                )
-              : Text(
-                  message.text ?? "",
-                  style: TextStyle(
-                    color: isMe ? Colors.white : Colors.black87,
-                    fontSize: 16,
-                  ),
-                ),
         ),
         const SizedBox(height: 10),
       ],
@@ -389,7 +387,6 @@ class _ChatScreenState extends State<ChatScreen> {
               }
             },
           ),
-
           IconButton(
             icon: Icon(
               Icons.attach_file_outlined,
@@ -397,7 +394,6 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             onPressed: _isUploading ? null : _sendImage,
           ),
-
           Expanded(
             child: TextField(
               controller: _textController,
