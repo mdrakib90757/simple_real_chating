@@ -81,6 +81,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+
   /// Create Firestore user if not exists
   Future<void> createUserIfNotExists() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -176,7 +177,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child:
                     (currentUser.photoURL == null ||
                         currentUser.photoURL!.isEmpty)
-                    ? Icon(Icons.person, size: 40, color: AppColor.primaryColor)
+                    ? Icon(Icons.person, size: 40)
                     : null,
               ),
               decoration: BoxDecoration(color: AppColor.primaryColor),

@@ -218,7 +218,10 @@ class _CameraScreenState extends State<CameraScreen> {
           title: Text('camera'),
         ),
         body: Center(
-          child: CircularProgressIndicator(color: AppColor.primaryColor),
+          child: CircularProgressIndicator(
+            color: AppColor.primaryColor,
+            strokeWidth: 2.5,
+          ),
         ),
       );
     }
@@ -330,6 +333,8 @@ class DisplayPictureScreen extends StatefulWidget {
 class _DisplayPictureScreenState extends State<DisplayPictureScreen> {
   @override
   Widget build(BuildContext context) {
+    final bool isLocalFile = !widget.imagePath.startsWith('http');
+
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
@@ -339,21 +344,34 @@ class _DisplayPictureScreenState extends State<DisplayPictureScreen> {
       ),
       body: Column(
         children: [
-          Image.file(File(widget.imagePath)),
-          SizedBox(height: 15),
-          CircleAvatar(
-            radius: 25,
-            backgroundColor: AppColor.primaryColor,
-            child: IconButton(
-              onPressed: () async {
-                if (widget.onSend != null) {
-                  await widget.onSend!(widget.imagePath);
-                }
-                //Navigator.pop(context);
-              },
-              icon: Icon(Icons.send, color: Colors.white),
+          Expanded(
+            child: Center(
+              child: InteractiveViewer(
+                child: isLocalFile
+                    ? Image.file(File(widget.imagePath))
+                    : Image.network(widget.imagePath),
+              ),
             ),
           ),
+          SizedBox(height: 15),
+
+          if (widget.onSend != null)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: CircleAvatar(
+                radius: 25,
+                backgroundColor: AppColor.primaryColor,
+                child: IconButton(
+                  onPressed: () async {
+                    if (widget.onSend != null) {
+                      await widget.onSend!(widget.imagePath);
+                    }
+                    //Navigator.pop(context);
+                  },
+                  icon: Icon(Icons.send, color: Colors.white),
+                ),
+              ),
+            ),
         ],
       ),
     );

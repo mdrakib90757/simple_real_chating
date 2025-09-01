@@ -6,6 +6,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:web_socket_app/model/message_model/message_model.dart';
 import 'package:web_socket_app/screen/camera/cameraScreen.dart';
 import 'package:web_socket_app/utils/color.dart';
@@ -190,6 +191,10 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  final ItemScrollController _itemScrollController = ItemScrollController();
+  final ItemPositionsListener _itemPositionsListener =
+      ItemPositionsListener.create();
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -211,7 +216,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   .collection("chat_rooms")
                   .doc(chatRoomId)
                   .collection("messages")
-                  .orderBy("timestamp", descending: true)
+                  .orderBy("timestamp", descending: false)
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -226,30 +231,28 @@ class _ChatScreenState extends State<ChatScreen> {
                   return Center(child: Text("Say hello!👋"));
                 }
                 final messages = snapshot.data!.docs;
-                return ListView.builder(
-                  controller: _scrollController,
+
+                return ScrollablePositionedList.builder(
                   reverse: true,
                   padding: EdgeInsets.all(16.0),
                   itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final doc = messages[index];
-                    final data = doc.data() as Map<String, dynamic>;
-                    RepliedMessageInfo? repliedMessageInfo;
-                    if (data['repliedTo'] != null) {
-                      repliedMessageInfo = RepliedMessageInfo.fromJson(
-                        data['repliedTo'],
-                      );
-                    }
+                  itemScrollController: _itemScrollController,
+                  itemPositionsListener: _itemPositionsListener,
+                  initialAlignment: 1.0,
 
-                    final message = Message(
-                      sender: data['senderEmail'] ?? "Unknown user",
-                      text: data['text'],
-                      imageUrl: data["imageUrl"],
-                      type: data['type'] ?? 'text',
-                      isMe: data['senderId'] == currentUser.uid,
-                      repliedTo: repliedMessageInfo,
+                  // initialScrollIndex: messages.length > 0 ? messages.length - 1 : 0,
+                  itemBuilder: (context, index) {
+                    final reversedIndex = messages.length - 1 - index;
+                    final doc = messages[reversedIndex];
+                    final data = doc.data() as Map<String, dynamic>;
+
+                    final message = Message.fromMap(
+                      data,
+                      currentUser.uid,
+                      doc.id,
                     );
-                    return _buildMessageBubble(message, doc);
+
+                    return _buildMessageBubble(message, doc, messages);
                   },
                 );
               },
@@ -271,49 +274,71 @@ class _ChatScreenState extends State<ChatScreen> {
         .replaceAll(".mp4", ".jpg");
   }
 
-  Widget _buildMessageBubble(Message message, DocumentSnapshot messageDoc) {
+  Widget _buildMessageBubble(
+    Message message,
+    DocumentSnapshot messageDoc,
+    List<DocumentSnapshot> allMessages,
+  ) {
     final bool isMe = message.isMe;
     final data = messageDoc.data() as Map<String, dynamic>;
 
     Widget _buildRepliedMessageWidget(RepliedMessageInfo repliedInfo) {
-      return Container(
-        padding: const EdgeInsets.all(8),
-        margin: const EdgeInsets.only(bottom: 4),
-        decoration: BoxDecoration(
-          color: isMe
-              ? Colors.blue.shade50.withOpacity(0.5)
-              : Colors.grey.shade300,
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(12),
-            topRight: Radius.circular(12),
-          ),
-          border: Border(
-            left: BorderSide(
-              color: isMe ? Colors.blue : Colors.grey.shade400,
-              width: 4,
+      return GestureDetector(
+        onTap: () {
+          final originalMessageIndex = allMessages.indexWhere(
+            (doc) => doc.id == repliedInfo.messageId,
+          );
+
+          if (originalMessageIndex != -1) {
+            final reversedUiIndex =
+                allMessages.length - 1 - originalMessageIndex;
+            _itemScrollController.scrollTo(
+              index: reversedUiIndex,
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeInOutCubic,
+              alignment: 0.5,
+            );
+          }
+        },
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          margin: const EdgeInsets.only(bottom: 4),
+          decoration: BoxDecoration(
+            color: isMe
+                ? Colors.blue.shade50.withOpacity(0.5)
+                : Colors.grey.shade300,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(12),
+              topRight: Radius.circular(12),
             ),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              repliedInfo.senderEmail.split('@')[0],
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: isMe ? Colors.blue.shade800 : Colors.black87,
+            border: Border(
+              left: BorderSide(
+                color: isMe ? Colors.blue : Colors.grey.shade400,
+                width: 4,
               ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              repliedInfo.content,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: isMe ? Colors.black.withOpacity(0.7) : Colors.black54,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                repliedInfo.senderEmail.split('@')[0],
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: isMe ? Colors.blue.shade800 : Colors.black87,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 2),
+              Text(
+                repliedInfo.content,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: isMe ? Colors.black.withOpacity(0.7) : Colors.black54,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -321,12 +346,24 @@ class _ChatScreenState extends State<ChatScreen> {
     return Dismissible(
       key: Key(messageDoc.id),
       direction: DismissDirection.startToEnd,
+
       onDismissed: (direction) {
+        final data = messageDoc.data() as Map<String, dynamic>;
+        final String messageType = data['type'] ?? 'text';
+        String replyContent;
+        if (messageType == 'image') {
+          replyContent = "📷 Image";
+        } else if (messageType == 'video') {
+          replyContent = "📹 Video";
+        } else {
+          replyContent = data['text'] ?? '';
+        }
         setState(() {
-          _repliedMessageId = messageDoc.id;
           _repliedMessage = RepliedMessageInfo(
-            content: data['text'] ?? "📷 Image",
-            senderEmail: data['senderEmail'],
+            messageId: messageDoc.id,
+            content: replyContent,
+            senderEmail:
+                (messageDoc.data() as Map<String, dynamic>)['senderEmail'],
           );
         });
       },
@@ -365,26 +402,41 @@ class _ChatScreenState extends State<ChatScreen> {
                       ? const EdgeInsets.fromLTRB(8, 0, 8, 8)
                       : EdgeInsets.zero,
                   child: message.type == "image"
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(15.0),
-                          child: Image.network(
-                            message.imageUrl ?? "",
-                            height: 200,
-                            width: 200,
-                            fit: BoxFit.cover,
-                            loadingBuilder: (context, child, progress) {
-                              return progress == null
-                                  ? child
-                                  : SizedBox(
-                                      height: 200,
-                                      width: 200,
-                                      child: Center(
-                                        child: CircularProgressIndicator(
-                                          color: AppColor.primaryColor,
+                      ? GestureDetector(
+                          onTap: () {
+                            if (message.imageUrl != null) {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => DisplayPictureScreen(
+                                    imagePath: message.imageUrl!,
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(15.0),
+                            child: Image.network(
+                              message.imageUrl ?? "",
+                              height: 200,
+                              width: 200,
+                              fit: BoxFit.cover,
+                              loadingBuilder: (context, child, progress) {
+                                return progress == null
+                                    ? child
+                                    : SizedBox(
+                                        height: 200,
+                                        width: 200,
+                                        child: Center(
+                                          child: CircularProgressIndicator(
+                                            color: AppColor.primaryColor,
+                                            strokeWidth: 2.5,
+                                          ),
                                         ),
-                                      ),
-                                    );
-                            },
+                                      );
+                              },
+                            ),
                           ),
                         )
                       : message.type == "video"

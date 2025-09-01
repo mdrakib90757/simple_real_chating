@@ -72,6 +72,17 @@ class ChatService {
           'repliedTo': repliedMessage?.toJson(),
         });
 
+    final String messageType = type ?? (imageUrl != null ? 'image' : 'text');
+    String lastMessageContent;
+
+    if (messageType == 'image') {
+      lastMessageContent = "📷 Image";
+    } else if (messageType == 'video') {
+      lastMessageContent = "📹 Video";
+    } else {
+      lastMessageContent = message ?? '';
+    }
+
     await _firestore.collection('chat_rooms').doc(chatRoom).set({
       'participants': [senderId, receiverId],
       'participant_info': {
@@ -84,7 +95,7 @@ class ChatService {
           'photoUrl': receiverDoc.data()?['photoUrl'],
         },
       },
-      'last_message': message ?? "📷 Image",
+      'last_message': lastMessageContent,
       'last_message_sender_id': senderId,
       'last_message_timestamp': timestamp,
     }, SetOptions(merge: true));
@@ -93,7 +104,9 @@ class ChatService {
     for (String token in tokens) {
       await notifier.sendPushNotification(
         token,
-        message ?? "📷 Image",
+
+        ///message ?? "📷 Image",
+        lastMessageContent,
         senderName,
         senderId: senderId,
         senderEmail: senderEmail,
