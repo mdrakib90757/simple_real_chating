@@ -4,6 +4,7 @@ class Message {
   final String? imageUrl;
   final String type;
   final bool isMe;
+  final RepliedMessageInfo? repliedTo;
 
   Message({
     required this.sender,
@@ -11,6 +12,7 @@ class Message {
     this.imageUrl,
     required this.isMe,
     required this.type,
+    this.repliedTo,
   });
 
   factory Message.fromMap(Map<String, dynamic> data, String currentUserEmail) {
@@ -21,5 +23,23 @@ class Message {
       type: data['type']?.toString() ?? "text",
       isMe: data['sender']?.toString() == currentUserEmail,
     );
+  }
+}
+
+class RepliedMessageInfo {
+  final String content;
+  final String senderEmail;
+
+  RepliedMessageInfo({required this.content, required this.senderEmail});
+
+  factory RepliedMessageInfo.fromJson(Map<String, dynamic> json) {
+    return RepliedMessageInfo(
+      content: json['content'] ?? '',
+      senderEmail: json['senderEmail'] ?? 'Unknown',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {'content': content, 'senderEmail': senderEmail};
   }
 }

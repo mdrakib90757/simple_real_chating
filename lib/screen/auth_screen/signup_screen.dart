@@ -49,9 +49,9 @@ class _SignupScreenState extends State<SignupScreen> {
               .collection('users')
               .doc(user.uid)
               .set({
-            'fcmToken': fcmToken,
-            'email': email,
-          }, SetOptions(merge: true));
+                'fcmToken': fcmToken,
+                'email': email,
+              }, SetOptions(merge: true));
           print("✅ FCM token saved: $fcmToken");
           await user.sendEmailVerification();
 

@@ -38,6 +38,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final User currentUser = FirebaseAuth.instance.currentUser!;
   String chatRoomId = "";
   bool _isUploading = false;
+  RepliedMessageInfo? _repliedMessage;
+  String? _repliedMessageId;
 
   @override
   void initState() {
@@ -66,12 +68,18 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     _textController.clear();
 
+    final RepliedMessageInfo? messageToReplay = _repliedMessage;
+    setState(() {
+      _repliedMessage = null;
+      _repliedMessageId = null;
+    });
     await chatService.sendMessage(
       context: context,
       senderId: currentUser.uid,
       receiverId: widget.receiverUserId,
       message: currentText.isNotEmpty ? currentText : null,
       imageUrl: imageUrl,
+      repliedMessage: messageToReplay,
     );
   }
 
@@ -207,10 +215,15 @@ class _ChatScreenState extends State<ChatScreen> {
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Center(child: CircularProgressIndicator());
+                  return Center(
+                    child: CircularProgressIndicator(
+                      color: AppColor.primaryColor,
+                      strokeWidth: 2.5,
+                    ),
+                  );
                 }
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return Center(child: Text("Say hello! 👋"));
+                  return Center(child: Text("Say hello!👋"));
                 }
                 final messages = snapshot.data!.docs;
                 return ListView.builder(
@@ -221,19 +234,28 @@ class _ChatScreenState extends State<ChatScreen> {
                   itemBuilder: (context, index) {
                     final doc = messages[index];
                     final data = doc.data() as Map<String, dynamic>;
+                    RepliedMessageInfo? repliedMessageInfo;
+                    if (data['repliedTo'] != null) {
+                      repliedMessageInfo = RepliedMessageInfo.fromJson(
+                        data['repliedTo'],
+                      );
+                    }
+
                     final message = Message(
                       sender: data['senderEmail'] ?? "Unknown user",
                       text: data['text'],
                       imageUrl: data["imageUrl"],
                       type: data['type'] ?? 'text',
                       isMe: data['senderId'] == currentUser.uid,
+                      repliedTo: repliedMessageInfo,
                     );
-                    return _buildMessageBubble(message);
+                    return _buildMessageBubble(message, doc);
                   },
                 );
               },
             ),
           ),
+          _buildReplyPreview(),
           _buildMessageComposer(),
         ],
       ),
@@ -249,105 +271,176 @@ class _ChatScreenState extends State<ChatScreen> {
         .replaceAll(".mp4", ".jpg");
   }
 
-  Widget _buildMessageBubble(Message message) {
+  Widget _buildMessageBubble(Message message, DocumentSnapshot messageDoc) {
     final bool isMe = message.isMe;
-    return Column(
-      crossAxisAlignment:
-          isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 10, right: 10, bottom: 4),
-          child: Text(
-            message.sender,
-            style: const TextStyle(fontSize: 12, color: Colors.black54),
+    final data = messageDoc.data() as Map<String, dynamic>;
+
+    Widget _buildRepliedMessageWidget(RepliedMessageInfo repliedInfo) {
+      return Container(
+        padding: const EdgeInsets.all(8),
+        margin: const EdgeInsets.only(bottom: 4),
+        decoration: BoxDecoration(
+          color: isMe
+              ? Colors.blue.shade50.withOpacity(0.5)
+              : Colors.grey.shade300,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(12),
+            topRight: Radius.circular(12),
           ),
-        ),
-        Container(
-          padding: message.type == 'image' || message.type == "video"
-              ? EdgeInsets.all(5)
-              : EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: isMe ? AppColor.primaryColor : Color(0xFFF1F1F1),
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(20),
-              topRight: const Radius.circular(20),
-              bottomLeft: isMe ? const Radius.circular(20) : Radius.zero,
-              bottomRight: isMe ? Radius.zero : const Radius.circular(20),
+          border: Border(
+            left: BorderSide(
+              color: isMe ? Colors.blue : Colors.grey.shade400,
+              width: 4,
             ),
           ),
-          child: message.type == "image"
-              ? ClipRRect(
-                  borderRadius: BorderRadius.circular(15.0),
-                  child: Image.network(
-                    message.imageUrl ?? "",
-                    height: 200,
-                    width: 200,
-                    fit: BoxFit.cover,
-                    loadingBuilder: (context, child, progress) {
-                      return progress == null
-                          ? child
-                          : SizedBox(
-                              height: 200,
-                              width: 200,
-                              child: Center(
-                                child: CircularProgressIndicator(
-                                  color: AppColor.primaryColor,
-                                ),
-                              ),
-                            );
-                    },
-                  ),
-                )
-              : message.type == "video"
-                  ? GestureDetector(
-                      onTap: () {
-                        if (message.imageUrl != null) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => DisplayVideoScreen(
-                                videoPath: message.imageUrl!,
-                                onSend: (_) {},
-                              ),
-                            ),
-                          );
-                        }
-                      },
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(15.0),
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Image.network(
-                              getVideoThumbnail(message.imageUrl ?? ""),
-                              height: 200,
-                              width: 200,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(
-                                height: 200,
-                                width: 200,
-                                color: Colors.black26,
-                              ),
-                            ),
-                            Icon(
-                              Icons.play_circle_fill,
-                              size: 50,
-                              color: Colors.white,
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  : Text(
-                      message.text ?? "",
-                      style: TextStyle(
-                        color: isMe ? Colors.white : Colors.black87,
-                        fontSize: 16,
-                      ),
-                    ),
         ),
-        const SizedBox(height: 10),
-      ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              repliedInfo.senderEmail.split('@')[0],
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isMe ? Colors.blue.shade800 : Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              repliedInfo.content,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: isMe ? Colors.black.withOpacity(0.7) : Colors.black54,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Dismissible(
+      key: Key(messageDoc.id),
+      direction: DismissDirection.startToEnd,
+      onDismissed: (direction) {
+        setState(() {
+          _repliedMessageId = messageDoc.id;
+          _repliedMessage = RepliedMessageInfo(
+            content: data['text'] ?? "📷 Image",
+            senderEmail: data['senderEmail'],
+          );
+        });
+      },
+      child: Column(
+        crossAxisAlignment: isMe
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 10, right: 10, bottom: 4),
+            child: Text(
+              message.sender,
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+          ),
+          Container(
+            padding: message.type == 'image' || message.type == "video"
+                ? EdgeInsets.all(5)
+                : EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: isMe ? AppColor.primaryColor : Color(0xFFF1F1F1),
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(20),
+                topRight: const Radius.circular(20),
+                bottomLeft: isMe ? const Radius.circular(20) : Radius.zero,
+                bottomRight: isMe ? Radius.zero : const Radius.circular(20),
+              ),
+            ),
+            child: Column(
+              children: [
+                if (message.repliedTo != null)
+                  _buildRepliedMessageWidget(message.repliedTo!),
+
+                Padding(
+                  padding: (message.repliedTo != null)
+                      ? const EdgeInsets.fromLTRB(8, 0, 8, 8)
+                      : EdgeInsets.zero,
+                  child: message.type == "image"
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(15.0),
+                          child: Image.network(
+                            message.imageUrl ?? "",
+                            height: 200,
+                            width: 200,
+                            fit: BoxFit.cover,
+                            loadingBuilder: (context, child, progress) {
+                              return progress == null
+                                  ? child
+                                  : SizedBox(
+                                      height: 200,
+                                      width: 200,
+                                      child: Center(
+                                        child: CircularProgressIndicator(
+                                          color: AppColor.primaryColor,
+                                        ),
+                                      ),
+                                    );
+                            },
+                          ),
+                        )
+                      : message.type == "video"
+                      ? GestureDetector(
+                          onTap: () {
+                            if (message.imageUrl != null) {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => DisplayVideoScreen(
+                                    videoPath: message.imageUrl!,
+                                    onSend: (_) {},
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(15.0),
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Image.network(
+                                  getVideoThumbnail(message.imageUrl ?? ""),
+                                  height: 200,
+                                  width: 200,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    height: 200,
+                                    width: 200,
+                                    color: Colors.black26,
+                                  ),
+                                ),
+                                Icon(
+                                  Icons.play_circle_fill,
+                                  size: 50,
+                                  color: Colors.white,
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : SelectableText(
+                          message.text ?? "",
+                          style: TextStyle(
+                            color: isMe ? Colors.white : Colors.black87,
+                            fontSize: 16,
+                          ),
+                        ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+      ),
     );
   }
 
@@ -425,6 +518,57 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
               child: Icon(Icons.send, color: Colors.white),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReplyPreview() {
+    if (_repliedMessage == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(8),
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade200,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(12),
+          topRight: Radius.circular(12),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _repliedMessage!.senderEmail,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _repliedMessage!.content,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 20),
+            onPressed: () {
+              setState(() {
+                _repliedMessage = null;
+                _repliedMessageId = null;
+              });
+            },
           ),
         ],
       ),

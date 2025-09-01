@@ -82,12 +82,12 @@ class NotificationHandler {
         print("✅ Notification sent successfully!");
       } else {
         print(
-          "❌ Failed to send notification. Status code: ${response.statusCode}",
+          " Failed to send notification. Status code: ${response.statusCode}",
         );
-        print("❌ FCM Error Body: ${response.body}");
+        print("FCM Error Body: ${response.body}");
       }
     } catch (e) {
-      print("❌ Error sending notification: $e");
+      print("Error sending notification: $e");
     }
   }
 }

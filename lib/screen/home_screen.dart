@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:web_socket_app/screen/profileEditScreen/profileEditScreen.dart';
 import 'package:web_socket_app/utils/color.dart';
 import 'chat_screen.dart';
 
@@ -95,7 +96,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         'fcmTokens': [],
         'createdAt': FieldValue.serverTimestamp(),
       });
-      print("✅ User created in Firestore: ${user.uid}");
+      print("User created in Firestore: ${user.uid}");
     }
   }
 
@@ -124,25 +125,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ],
         ),
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.start,
-          children: [
-            _buildOnlineUsersList(),
-            Icon(Icons.chat_bubble_outline, size: 80, color: Colors.grey[200]),
-            SizedBox(height: 20),
-            Text(
-              "Welcome to the Chat App!",
-              style: TextStyle(fontSize: 18, color: Colors.grey[700]),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text(
+              "Active Now",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
-            SizedBox(height: 10),
-            Text(
-              "Click the menu on the top right to see online users.",
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+          ),
+          _buildOnlineUsersList(),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text(
+              "Chats",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
-          ],
-        ),
+          ),
+          buildChatList(),
+        ],
       ),
       drawer: Drawer(
         child: ListView(
@@ -166,19 +168,33 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ),
               currentAccountPicture: CircleAvatar(
-                backgroundImage: (currentUser.photoURL != null &&
+                backgroundImage:
+                    (currentUser.photoURL != null &&
                         currentUser.photoURL!.isNotEmpty)
                     ? NetworkImage(currentUser.photoURL!)
                     : null,
-                child: (currentUser.photoURL == null ||
+                child:
+                    (currentUser.photoURL == null ||
                         currentUser.photoURL!.isEmpty)
                     ? Icon(Icons.person, size: 40, color: AppColor.primaryColor)
                     : null,
               ),
               decoration: BoxDecoration(color: AppColor.primaryColor),
             ),
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text("Edit Profile"),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ProfileEditScreen(),
+                  ),
+                );
+              },
+            ),
             Divider(),
-            SizedBox(height: 30),
             ListTile(
               leading: Icon(Icons.exit_to_app),
               onTap: () async {
@@ -194,6 +210,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  //active user list
   Widget _buildOnlineUsersList() {
     return SizedBox(
       height: 100,
@@ -238,7 +255,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             );
           }
-
           return ListView.builder(
             scrollDirection: Axis.horizontal,
             itemCount: onlineUsers.length,
@@ -261,10 +277,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         .collection('users')
                         .doc(uid)
                         .set({
-                      'email': email,
-                      'fcmTokens': [],
-                      'createdAt': FieldValue.serverTimestamp(),
-                    });
+                          'email': email,
+                          'fcmTokens': [],
+                          'createdAt': FieldValue.serverTimestamp(),
+                        });
                     print("Receiver user created in Firestore: $uid");
                   }
 
@@ -308,6 +324,132 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           );
         },
       ),
+    );
+  }
+
+  Widget buildChatList() {
+    final String currentUserId = currentUser.uid;
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('chat_rooms')
+          .where('participants', arrayContains: currentUserId)
+          .orderBy('last_message_timestamp', descending: true)
+          .snapshots(),
+      builder: (context, AsyncSnapshot<QuerySnapshot> snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Expanded(
+            child: Center(
+              child: CircularProgressIndicator(
+                color: AppColor.primaryColor,
+                strokeWidth: 2,
+              ),
+            ),
+          );
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return Expanded(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.chat_bubble_outline,
+                    size: 80,
+                    color: Colors.grey[200],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    "Welcome to the Chat App!",
+                    style: TextStyle(fontSize: 18, color: Colors.grey[700]),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    "Start a conversation with an active user.",
+                    style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        final chatDocs = snapshot.data!.docs;
+        return Expanded(
+          child: ListView.builder(
+            //padding: const EdgeInsets.only(top: 8.0),
+            itemCount: chatDocs.length,
+            itemBuilder: (context, index) {
+              final chatData = chatDocs[index].data() as Map<String, dynamic>;
+
+              final List<String> participants = List.from(
+                chatData['participants'],
+              );
+              final String otherUserId = participants.firstWhere(
+                (id) => id != currentUserId,
+                orElse: () => '',
+              );
+
+              if (otherUserId.isEmpty) return const SizedBox.shrink();
+
+              final Map<String, dynamic> otherUserInfo =
+                  chatData['participant_info'][otherUserId];
+              final String otherUserEmail =
+                  otherUserInfo['email'] ?? 'Unknown User';
+              final String? otherUserPhotoUrl = otherUserInfo['photoUrl'];
+
+              final Timestamp lastMessageTimestamp =
+                  chatData['last_message_timestamp'];
+              final DateTime lastMessageTime = lastMessageTimestamp.toDate();
+              final String formattedTime =
+                  "${lastMessageTime.hour}:${lastMessageTime.minute.toString().padLeft(2, '0')}";
+
+              return ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16.0,
+                  vertical: 8.0,
+                ),
+                leading: CircleAvatar(
+                  radius: 25,
+                  backgroundImage: otherUserPhotoUrl != null
+                      ? NetworkImage(otherUserPhotoUrl)
+                      : null,
+                  backgroundColor: AppColor.primaryColor,
+                  child: otherUserPhotoUrl == null
+                      ? const Icon(Icons.person, color: Colors.white)
+                      : null,
+                ),
+                title: Text(
+                  otherUserEmail.split('@')[0],
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(
+                  chatData['last_message'] ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: Text(
+                  formattedTime,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ChatScreen(
+                        receiverEmail: otherUserEmail,
+                        receiverID: otherUserId,
+                        currentUserId: currentUserId,
+                        receiverUserId: otherUserId,
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }
