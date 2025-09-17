@@ -1,10 +1,13 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:web_socket_app/model/message_model/message_model.dart';
 import '../notification_handle/notificationHandle.dart';
+
+
 
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -23,6 +26,7 @@ class ChatService {
     }
   }
 
+
   Future<void> sendMessage({
     required BuildContext context,
     required String senderId,
@@ -32,12 +36,12 @@ class ChatService {
     String? type,
     RepliedMessageInfo? repliedMessage,
   }) async {
-    final receiverDoc = await _firestore
-        .collection('users')
-        .doc(receiverId)
-        .get();
-    if (!receiverDoc.exists) return;
 
+
+
+    final receiverDoc = await _firestore.collection('users').doc(receiverId).get();
+
+    if (!receiverDoc.exists) return;
     final senderEmail = FirebaseAuth.instance.currentUser?.email;
     if (senderEmail == null) {
       print(" Cannot send notification: sender email is null.");
@@ -45,14 +49,15 @@ class ChatService {
     }
 
     final tokens = List<String>.from(receiverDoc.data()?['fcmTokens'] ?? []);
-    final chatRoomId = [senderId, receiverId]..sort();
-    final chatRoom = chatRoomId.join('_');
-    final Timestamp timestamp = Timestamp.now();
+    final List<String> receiverTokens = List<String>.from(receiverDoc.data()?['fcmTokens'] ?? []);
+    final String? senderToken = await FirebaseMessaging.instance.getToken();
 
+
+    if(senderToken != null){receiverTokens.remove(senderToken);}
+    final List<String> ids = [senderId, receiverId];ids.sort();
+    final String chatRoom = ids.join('_');
+    final Timestamp timestamp = Timestamp.now();
     final senderDoc = await _firestore.collection('users').doc(senderId).get();
-    // final senderName = senderDoc.data()?['name'] ??
-    //     FirebaseAuth.instance.currentUser?.email ??
-    //     "Unknown User";
     final senderName = senderDoc.data()?['name'] ?? senderEmail.split('@')[0];
 
     await _firestore
@@ -76,11 +81,11 @@ class ChatService {
       'participants': [senderId, receiverId],
       'participant_info': {
         senderId: {
-          'email': senderDoc.data()?['email'],
+          'email': senderDoc.data()?['email'] ?? FirebaseAuth.instance.currentUser?.email ?? "Unknown",
           'photoUrl': senderDoc.data()?['photoUrl'],
         },
         receiverId: {
-          'email': receiverDoc.data()?['email'],
+          'email': receiverDoc.data()?['email'] ?? "Unknown",
           'photoUrl': receiverDoc.data()?['photoUrl'],
         },
       },
@@ -88,9 +93,10 @@ class ChatService {
       'last_message_sender_id': senderId,
       'last_message_timestamp': timestamp,
     }, SetOptions(merge: true));
+
     // Send push notification to all tokens
     final notifier = NotificationHandler(context);
-    for (String token in tokens) {
+    for (String token in receiverTokens) {
       await notifier.sendPushNotification(
         token,
         message ?? "📷 Image",

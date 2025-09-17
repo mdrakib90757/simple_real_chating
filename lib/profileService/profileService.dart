@@ -1,4 +1,3 @@
-// lib/services/profile_service.dart
 
 import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';

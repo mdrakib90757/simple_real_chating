@@ -49,14 +49,18 @@ class _LoginScreenState extends State<LoginScreen> {
         await user.reload();
         user = _auth.currentUser;
         if (user!.emailVerified) {
-          // ✅ FCM token fetch & save
+
           String? fcmToken = await FirebaseMessaging.instance.getToken();
           if (fcmToken != null) {
             await FirebaseFirestore.instance
                 .collection('users')
                 .doc(user.uid)
-                .set({'fcmToken': fcmToken}, SetOptions(merge: true));
-            print("✅ FCM token saved: $fcmToken");
+                .set({
+              'fcmToken': fcmToken,
+              'email': user.email,
+              'updatedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
+            print(" FCM token saved: $fcmToken");
           }
 
           if (mounted) {
@@ -191,7 +195,7 @@ class _LoginScreenState extends State<LoginScreen> {
               onPressed: _isLoading ? null : Login,
               child: _isLoading
                   ? const CircularProgressIndicator(color: Colors.white)
-                  : Text("SIGNUP", style: TextStyle(color: Colors.white)),
+                  : Text("SIGNIN", style: TextStyle(color: Colors.white)),
             ),
             SizedBox(height: 15),
             GestureDetector(

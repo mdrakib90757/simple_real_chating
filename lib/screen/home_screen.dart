@@ -198,8 +198,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ListTile(
               leading: Icon(Icons.exit_to_app),
               onTap: () async {
-                await FirebaseAuth.instance.signOut();
-                Navigator.pushReplacementNamed(context, '/');
+                final user = FirebaseAuth.instance.currentUser;
+                if(user == null) return;
+                try {
+
+                  final token = await FirebaseMessaging.instance.getToken();
+
+
+                  if (token != null) {
+                    await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+                      'fcmTokens': FieldValue.arrayRemove([token]),
+                    });
+                    print("FCM token removed on logout.");
+                  }
+
+
+                  await FirebaseAuth.instance.signOut();
+
+
+                  if (mounted) {
+                    Navigator.pushReplacementNamed(context, '/');
+                  }
+
+                } catch (e) {
+                  print("Error during logout: $e");
+                }
               },
               title: Text("Logout"),
               subtitle: Text("sign out of this account"),
@@ -395,7 +418,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               final Map<String, dynamic> otherUserInfo =
                   chatData['participant_info'][otherUserId];
               final String otherUserEmail =
-                  otherUserInfo['email'] ?? 'Unknown User';
+              (otherUserInfo['email'] ?? '').isNotEmpty
+                  ? otherUserInfo['email']
+                  : 'Unknown User';
               final String? otherUserPhotoUrl = otherUserInfo['photoUrl'];
 
               final Timestamp lastMessageTimestamp =
