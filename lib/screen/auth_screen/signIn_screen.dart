@@ -49,17 +49,16 @@ class _LoginScreenState extends State<LoginScreen> {
         await user.reload();
         user = _auth.currentUser;
         if (user!.emailVerified) {
-
           String? fcmToken = await FirebaseMessaging.instance.getToken();
           if (fcmToken != null) {
             await FirebaseFirestore.instance
                 .collection('users')
                 .doc(user.uid)
                 .set({
-              'fcmToken': fcmToken,
-              'email': user.email,
-              'updatedAt': FieldValue.serverTimestamp(),
-            }, SetOptions(merge: true));
+                  'fcmToken': fcmToken,
+                  'email': user.email,
+                  'updatedAt': FieldValue.serverTimestamp(),
+                }, SetOptions(merge: true));
             print(" FCM token saved: $fcmToken");
           }
 

@@ -7,8 +7,6 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:web_socket_app/model/message_model/message_model.dart';
 import '../notification_handle/notificationHandle.dart';
 
-
-
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
@@ -26,7 +24,6 @@ class ChatService {
     }
   }
 
-
   Future<void> sendMessage({
     required BuildContext context,
     required String senderId,
@@ -36,10 +33,10 @@ class ChatService {
     String? type,
     RepliedMessageInfo? repliedMessage,
   }) async {
-
-
-
-    final receiverDoc = await _firestore.collection('users').doc(receiverId).get();
+    final receiverDoc = await _firestore
+        .collection('users')
+        .doc(receiverId)
+        .get();
 
     if (!receiverDoc.exists) return;
     final senderEmail = FirebaseAuth.instance.currentUser?.email;
@@ -47,14 +44,17 @@ class ChatService {
       print(" Cannot send notification: sender email is null.");
       return;
     }
-
-    final tokens = List<String>.from(receiverDoc.data()?['fcmTokens'] ?? []);
-    final List<String> receiverTokens = List<String>.from(receiverDoc.data()?['fcmTokens'] ?? []);
+    // final tokens = List<String>.from(receiverDoc.data()?['fcmTokens'] ?? []);
+    final List<String> receiverTokens = List<String>.from(
+      receiverDoc.data()?['fcmTokens'] ?? [],
+    );
     final String? senderToken = await FirebaseMessaging.instance.getToken();
 
-
-    if(senderToken != null){receiverTokens.remove(senderToken);}
-    final List<String> ids = [senderId, receiverId];ids.sort();
+    if (senderToken != null) {
+      receiverTokens.remove(senderToken);
+    }
+    final List<String> ids = [senderId, receiverId];
+    ids.sort();
     final String chatRoom = ids.join('_');
     final Timestamp timestamp = Timestamp.now();
     final senderDoc = await _firestore.collection('users').doc(senderId).get();
@@ -75,13 +75,18 @@ class ChatService {
           'senderName': senderName,
           'timestamp': timestamp,
           'repliedTo': repliedMessage?.toJson(),
+          'isRead': false, // Initialize as unread
+          'readAt': null, // Initialize read timestamp
         });
 
     await _firestore.collection('chat_rooms').doc(chatRoom).set({
       'participants': [senderId, receiverId],
       'participant_info': {
         senderId: {
-          'email': senderDoc.data()?['email'] ?? FirebaseAuth.instance.currentUser?.email ?? "Unknown",
+          'email':
+              senderDoc.data()?['email'] ??
+              FirebaseAuth.instance.currentUser?.email ??
+              "Unknown",
           'photoUrl': senderDoc.data()?['photoUrl'],
         },
         receiverId: {

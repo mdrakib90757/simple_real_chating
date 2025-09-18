@@ -4,6 +4,7 @@ class Message {
   final String? imageUrl;
   final String type;
   final bool isMe;
+  final bool? isRead;
   final RepliedMessageInfo? repliedTo;
 
   Message({
@@ -13,6 +14,7 @@ class Message {
     required this.isMe,
     required this.type,
     this.repliedTo,
+    this.isRead,
   });
 
   factory Message.fromMap(Map<String, dynamic> data, String currentUserEmail) {
@@ -21,6 +23,7 @@ class Message {
       text: data['text']?.toString(),
       imageUrl: data['imageUrl']?.toString(),
       type: data['type']?.toString() ?? "text",
+      isRead: data['isRead'] ?? false,
       isMe: data['sender']?.toString() == currentUserEmail,
     );
   }

@@ -42,7 +42,6 @@ class _SignupScreenState extends State<SignupScreen> {
           .createUserWithEmailAndPassword(email: email, password: password);
       User? user = userCredential.user;
       if (user != null) {
-        // ✅ Save FCM token
         String? fcmToken = await FirebaseMessaging.instance.getToken();
         if (fcmToken != null) {
           await FirebaseFirestore.instance
@@ -51,8 +50,8 @@ class _SignupScreenState extends State<SignupScreen> {
               .set({
                 'fcmToken': fcmToken,
                 'email': email,
-            'createdAt': FieldValue.serverTimestamp(),
-            'updatedAt': FieldValue.serverTimestamp(),
+                'createdAt': FieldValue.serverTimestamp(),
+                'updatedAt': FieldValue.serverTimestamp(),
               }, SetOptions(merge: true));
           print("FCM token saved: $fcmToken");
           await user.sendEmailVerification();

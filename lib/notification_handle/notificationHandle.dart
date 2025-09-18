@@ -60,7 +60,7 @@ class NotificationHandler {
     };
 
     final String encodedPayload = jsonEncode(payload);
-    print("--- Sending FCM V1 Payload ---");
+    print("Sending FCM V1 Payload");
     print(encodedPayload);
     try {
       final accessToken = await _getAccessToken();
@@ -79,7 +79,7 @@ class NotificationHandler {
       );
 
       if (response.statusCode == 200) {
-        print("✅ Notification sent successfully!");
+        print(" Notification sent successfully!");
       } else {
         print(
           " Failed to send notification. Status code: ${response.statusCode}",

@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
@@ -15,8 +17,8 @@ import 'package:web_socket_app/main.dart';
 class ChatScreen extends StatefulWidget {
   final String receiverEmail;
   final String receiverID;
-  final String currentUserId; // sender
-  final String receiverUserId; // receiver
+  final String currentUserId;
+  final String receiverUserId;
   const ChatScreen({
     super.key,
     required this.receiverEmail,
@@ -30,6 +32,7 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final ChatService chatService = ChatService();
+  final FirebaseDatabase _realtimeDatabase = FirebaseDatabase.instance;
   final FirebaseFirestore _firebaseFirestore = FirebaseFirestore.instance;
   final FirebaseStorage _firebaseStorage = FirebaseStorage.instance;
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
@@ -39,7 +42,14 @@ class _ChatScreenState extends State<ChatScreen> {
   String chatRoomId = "";
   bool _isUploading = false;
   RepliedMessageInfo? _repliedMessage;
+  String? _editingMessageId;
   String? _repliedMessageId;
+  DatabaseReference? _typingStatusRef;
+  StreamSubscription<DatabaseEvent>? _typingSubscription;
+  bool _isReceiverTyping = false;
+  Timer? _debounce;
+  bool _showEmojiPicker = false;
+  final FocusNode _emojiFocusNode = FocusNode();
 
   @override
   void initState() {
@@ -50,6 +60,19 @@ class _ChatScreenState extends State<ChatScreen> {
     _messaging.requestPermission(alert: true, badge: true, sound: true);
 
     currentChatUserId = widget.receiverID;
+    _markMessagesAsRead();
+
+    _typingStatusRef = _realtimeDatabase.ref(
+      'chat_room_typing/$chatRoomId/${currentUser.uid}',
+    );
+    _setupTypingListener();
+    _emojiFocusNode.addListener(() {
+      if (_emojiFocusNode.hasFocus) {
+        setState(() {
+          _showEmojiPicker = false;
+        });
+      }
+    });
   }
 
   @override
@@ -57,6 +80,10 @@ class _ChatScreenState extends State<ChatScreen> {
     // TODO: implement dispose
     _textController.dispose();
     currentChatUserId = null;
+    _typingSubscription?.cancel();
+    _setTypingStatus(false);
+    _debounce?.cancel();
+    _emojiFocusNode.dispose();
     super.dispose();
   }
 
@@ -66,6 +93,14 @@ class _ChatScreenState extends State<ChatScreen> {
       print("Cannot send an empty message.");
       return;
     }
+    if (_editingMessageId != null) {
+      await _editMessage(_editingMessageId!, currentText);
+      setState(() {
+        _editingMessageId = null;
+        _textController.clear();
+      });
+      return;
+    }
     _textController.clear();
 
     final RepliedMessageInfo? messageToReplay = _repliedMessage;
@@ -73,6 +108,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _repliedMessage = null;
       _repliedMessageId = null;
     });
+
     await chatService.sendMessage(
       context: context,
       senderId: currentUser.uid,
@@ -83,6 +119,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  // send image
   Future<void> _sendImage() async {
     final picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
@@ -119,6 +156,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  // send camera image
   Future<void> _sendCapturedImage(String imagePath) async {
     setState(() => _isUploading = true);
 
@@ -151,6 +189,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  //send camera video
   Future<void> _sendCapturedVideo(String videoPath) async {
     setState(() => _isUploading = true);
 
@@ -187,6 +226,185 @@ class _ChatScreenState extends State<ChatScreen> {
       print("Error uploading video: $e");
     } finally {
       setState(() => _isUploading = false);
+    }
+  }
+
+  // all message marks
+  Future<void> _markMessagesAsRead() async {
+    final messagesRef = _firebaseFirestore
+        .collection("chat_rooms")
+        .doc(chatRoomId)
+        .collection("messages");
+
+    final unreadMessages = await messagesRef
+        .where('receiverId', isEqualTo: currentUser.uid)
+        .where('senderId', isEqualTo: widget.receiverUserId)
+        .where('isRead', isEqualTo: false)
+        .get();
+
+    for (var doc in unreadMessages.docs) {
+      await doc.reference.update({
+        'isRead': true,
+        'readAt': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  void _setupTypingListener() {
+    final receiverTypingRef = _realtimeDatabase.ref(
+      'chat_room_typing/$chatRoomId/${widget.receiverUserId}',
+    );
+    _typingSubscription = receiverTypingRef.onValue.listen((event) {
+      if (event.snapshot.value != null) {
+        final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+        setState(() {
+          final lastUpdated = data['timestamp'] as int?;
+          if (lastUpdated != null &&
+              (DateTime.now().millisecondsSinceEpoch - lastUpdated) < 5000) {
+            _isReceiverTyping = data['isTyping'] ?? false;
+          } else {
+            _isReceiverTyping = false;
+          }
+        });
+      } else {
+        setState(() {
+          _isReceiverTyping = false;
+        });
+      }
+    });
+  }
+
+  void _setTypingStatus(bool isTyping) {
+    _typingStatusRef
+        ?.set({'isTyping': isTyping, 'timestamp': ServerValue.timestamp})
+        .catchError((error) {
+          print("Failed to set typing status: $error");
+        });
+  }
+
+  //delete  message dialog
+  void _showEditDeleteOptions(DocumentSnapshot messageDoc) {
+    final data = messageDoc.data() as Map<String, dynamic>;
+    final String? messageText = data['text'];
+    final String? imageUrl = data['imageUrl'];
+    final String? messageType = data['type'];
+
+    showModalBottomSheet(
+      backgroundColor: Colors.white,
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (messageText != null &&
+                  messageText.isNotEmpty &&
+                  messageType == 'text')
+                ListTile(
+                  leading: Icon(Icons.edit),
+                  title: Text("Edit Message"),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _startEditingMessage(messageDoc.id, messageText);
+                  },
+                ),
+              ListTile(
+                leading: Icon(Icons.delete_forever, color: Colors.red),
+                title: Text(
+                  "Delete Message",
+                  style: TextStyle(color: Colors.red),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _deleteMessage(messageDoc.id, imageUrl, messageType);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // edit message dialog
+  void _startEditingMessage(String messageId, String currentText) {
+    setState(() {
+      _editingMessageId = messageId;
+      _textController.text = currentText;
+      _textController.selection = TextSelection.fromPosition(
+        TextPosition(offset: _textController.text.length),
+      );
+    });
+
+    FocusScope.of(context).requestFocus(_emojiFocusNode);
+  }
+
+  //delete message
+  Future<void> _deleteMessage(
+    String messageId,
+    String? imageUrl,
+    String? type,
+  ) async {
+    bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        title: Text("Delete Message"),
+        content: Text(
+          "Are you sure you want to delete this message? This cannot be undone.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text("Delete", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await _firebaseFirestore
+            .collection('chat_rooms')
+            .doc(chatRoomId)
+            .collection('messages')
+            .doc(messageId)
+            .delete();
+
+        print("Message deleted from Firestore.");
+      } catch (e) {
+        print("Error deleting message: $e");
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Failed to delete message: $e")));
+      }
+    }
+  }
+
+  //edit message
+  Future<void> _editMessage(String messageId, String newText) async {
+    try {
+      await _firebaseFirestore
+          .collection('chat_rooms')
+          .doc(chatRoomId)
+          .collection('messages')
+          .doc(messageId)
+          .update({
+            'text': newText,
+            'editedAt': FieldValue.serverTimestamp(), // Add an 'editedAt' field
+          });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Message updated!")));
+    } catch (e) {
+      print("Error editing message: $e");
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Failed to edit message: $e")));
     }
   }
 
@@ -256,7 +474,65 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
           _buildReplyPreview(),
+          _isReceiverTyping
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16.0,
+                    vertical: 4.0,
+                  ),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "${widget.receiverEmail.split('@')[0]} is typing...",
+                      style: TextStyle(
+                        fontStyle: FontStyle.italic,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
           _buildMessageComposer(),
+
+          // Offstage(
+          //   offstage: !_showEmojiPicker,
+          //   child: SizedBox(
+          //     height: 250,
+          //     child:EmojiPicker(
+          //       textEditingController: _textController,
+          //       config: Config(
+          //         columns: 7,
+          //         emojiSizeMax: 32 * (foundation.defaultTargetPlatform == TargetPlatform.iOS ? 1.30 : 1.0),
+          //         verticalSpacing: 0,
+          //         horizontalSpacing: 0,
+          //         gridPadding: EdgeInsets.zero,
+          //         initCategory:Category.RECENT, // Correct usage of Category enum
+          //         bgColor: const Color(0xFFF2F2F2),
+          //         indicatorColor: AppColor.primaryColor,
+          //         iconColor: Colors.grey,
+          //         iconColorSelected: AppColor.primaryColor,
+          //         progressIndicatorColor: AppColor.primaryColor,
+          //         backspaceColor: AppColor.primaryColor,
+          //         skinToneDialogBgColor: Colors.white,
+          //         skinToneIndicatorColor: Colors.grey,
+          //         enableSkinTones: true,
+          //         recentTabBehavior: RecentTabBehavior.POPULAR,
+          //         recentsLimit: 28,
+          //         noRecents: const Text(
+          //           'No Recents',
+          //           style: TextStyle(fontSize: 20, color: Colors.black26),
+          //           textAlign: TextAlign.center,
+          //         ),
+          //         loadingIndicator: const SizedBox.shrink(),
+          //         tabIndicatorAnimDuration: kTabScrollDuration,
+          //         categoryIcons: const CategoryIcons(),
+          //         buttonMode: ButtonMode.MATERIAL,
+          //         checkPlatformCompatibility: true,
+          //       ),
+          //     ),
+          //
+          //   ),
+          // ),
         ],
       ),
     );
@@ -271,6 +547,7 @@ class _ChatScreenState extends State<ChatScreen> {
         .replaceAll(".mp4", ".jpg");
   }
 
+  // build messageBubble
   Widget _buildMessageBubble(Message message, DocumentSnapshot messageDoc) {
     final bool isMe = message.isMe;
     final data = messageDoc.data() as Map<String, dynamic>;
@@ -318,132 +595,196 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
 
-    return Dismissible(
-      key: Key(messageDoc.id),
-      direction: DismissDirection.startToEnd,
-      onDismissed: (direction) {
-        setState(() {
-          _repliedMessageId = messageDoc.id;
-          _repliedMessage = RepliedMessageInfo(
-            content: data['text'] ?? "📷 Image",
-            senderEmail: data['senderEmail'],
-          );
-        });
-      },
-      child: Column(
-        crossAxisAlignment: isMe
-            ? CrossAxisAlignment.end
-            : CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 10, right: 10, bottom: 4),
-            child: Text(
-              message.sender,
-              style: const TextStyle(fontSize: 12, color: Colors.black54),
-            ),
-          ),
-          Container(
-            padding: message.type == 'image' || message.type == "video"
-                ? EdgeInsets.all(5)
-                : EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: isMe ? AppColor.primaryColor : Color(0xFFF1F1F1),
-              borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(20),
-                topRight: const Radius.circular(20),
-                bottomLeft: isMe ? const Radius.circular(20) : Radius.zero,
-                bottomRight: isMe ? Radius.zero : const Radius.circular(20),
+    // Determine the read status icon
+    Widget? readStatusIcon;
+    if (isMe) {
+      if (data['isRead'] == true) {
+        readStatusIcon = Icon(
+          Icons.done_all,
+          size: 16,
+          color: AppColor.primaryColor,
+        ); // Read
+      } else {
+        readStatusIcon = Icon(
+          Icons.check,
+          size: 16,
+          color: Colors.grey,
+        ); // Sent
+      }
+    }
+
+    return GestureDetector(
+      onLongPress: isMe && message.type == 'text'
+          ? () => _showEditDeleteOptions(messageDoc)
+          : null,
+      child: Dismissible(
+        key: Key(messageDoc.id),
+        direction: DismissDirection.startToEnd,
+        onDismissed: (direction) {
+          setState(() {
+            _repliedMessageId = messageDoc.id;
+            _repliedMessage = RepliedMessageInfo(
+              content: data['text'] ?? "📷 Image",
+              senderEmail: data['senderEmail'],
+            );
+          });
+        },
+        child: Column(
+          crossAxisAlignment: isMe
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 10, right: 10, bottom: 4),
+              child: Text(
+                message.sender,
+                style: const TextStyle(fontSize: 12, color: Colors.black54),
               ),
             ),
-            child: Column(
-              children: [
-                if (message.repliedTo != null)
-                  _buildRepliedMessageWidget(message.repliedTo!),
+            Container(
+              padding: message.type == 'image' || message.type == "video"
+                  ? EdgeInsets.all(5)
+                  : EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: isMe ? AppColor.primaryColor : Color(0xFFF1F1F1),
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(20),
+                  topRight: const Radius.circular(20),
+                  bottomLeft: isMe ? const Radius.circular(20) : Radius.zero,
+                  bottomRight: isMe ? Radius.zero : const Radius.circular(20),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (message.repliedTo != null)
+                    _buildRepliedMessageWidget(message.repliedTo!),
 
-                Padding(
-                  padding: (message.repliedTo != null)
-                      ? const EdgeInsets.fromLTRB(8, 0, 8, 8)
-                      : EdgeInsets.zero,
-                  child: message.type == "image"
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(15.0),
-                          child: Image.network(
-                            message.imageUrl ?? "",
-                            height: 200,
-                            width: 200,
-                            fit: BoxFit.cover,
-                            loadingBuilder: (context, child, progress) {
-                              return progress == null
-                                  ? child
-                                  : SizedBox(
-                                      height: 200,
-                                      width: 200,
-                                      child: Center(
-                                        child: CircularProgressIndicator(
-                                          color: AppColor.primaryColor,
-                                        ),
-                                      ),
-                                    );
-                            },
-                          ),
-                        )
-                      : message.type == "video"
-                      ? GestureDetector(
-                          onTap: () {
-                            if (message.imageUrl != null) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => DisplayVideoScreen(
-                                    videoPath: message.imageUrl!,
-                                    onSend: (_) {},
+                  Padding(
+                    padding: (message.repliedTo != null)
+                        ? const EdgeInsets.fromLTRB(8, 0, 8, 8)
+                        : EdgeInsets.zero,
+                    child: message.type == "image"
+                        ? GestureDetector(
+                            onTap: () {
+                              if (message.imageUrl != null) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => DisplayPictureScreen(
+                                      imagePath: message.imageUrl!,
+                                      onSend: (_) {},
+                                    ),
                                   ),
-                                ),
-                              );
-                            }
-                          },
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(15.0),
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                Image.network(
-                                  getVideoThumbnail(message.imageUrl ?? ""),
-                                  height: 200,
-                                  width: 200,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
+                                );
+                              }
+                            },
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(15.0),
+                              child: Image.network(
+                                message.imageUrl ?? "",
+                                height: 200,
+                                width: 200,
+                                fit: BoxFit.cover,
+                                loadingBuilder: (context, child, progress) {
+                                  return progress == null
+                                      ? child
+                                      : SizedBox(
+                                          height: 200,
+                                          width: 200,
+                                          child: Center(
+                                            child: CircularProgressIndicator(
+                                              color: AppColor.primaryColor,
+                                            ),
+                                          ),
+                                        );
+                                },
+                              ),
+                            ),
+                          )
+                        : message.type == "video"
+                        ? GestureDetector(
+                            onTap: () {
+                              if (message.imageUrl != null) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => DisplayVideoScreen(
+                                      videoPath: message.imageUrl!,
+                                      onSend: (_) {},
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(15.0),
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  Image.network(
+                                    getVideoThumbnail(message.imageUrl ?? ""),
                                     height: 200,
                                     width: 200,
-                                    color: Colors.black26,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      height: 200,
+                                      width: 200,
+                                      color: Colors.black26,
+                                    ),
                                   ),
-                                ),
-                                Icon(
-                                  Icons.play_circle_fill,
-                                  size: 50,
-                                  color: Colors.white,
-                                ),
-                              ],
+                                  Icon(
+                                    Icons.play_circle_fill,
+                                    size: 50,
+                                    color: Colors.white,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : SelectableText(
+                            message.text ?? "",
+                            style: TextStyle(
+                              color: isMe ? Colors.white : Colors.black87,
+                              fontSize: 16,
                             ),
                           ),
-                        )
-                      : SelectableText(
-                          message.text ?? "",
-                          style: TextStyle(
-                            color: isMe ? Colors.white : Colors.black87,
-                            fontSize: 16,
-                          ),
+                  ),
+
+                  if (data['editedAt'] != null)
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        top: 2.0,
+                        left: 4.0,
+                        right: 4.0,
+                      ),
+                      child: Text(
+                        ' (Edited)',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontStyle: FontStyle.italic,
+                          color: isMe ? Colors.white70 : Colors.black54,
                         ),
-                ),
-              ],
+                      ),
+                    ),
+
+                  if (readStatusIcon !=
+                      null) // Display read status icon if available
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4.0, right: 4.0),
+                      child: readStatusIcon,
+                    ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-        ],
+            const SizedBox(height: 10),
+          ],
+        ),
       ),
     );
   }
 
+  //build messageComposer
   Widget _buildMessageComposer() {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
@@ -453,6 +794,9 @@ class _ChatScreenState extends State<ChatScreen> {
           IconButton(
             icon: Icon(Icons.photo_camera, color: AppColor.primaryColor),
             onPressed: () async {
+              setState(() {
+                _showEmojiPicker = false;
+              });
               final filePath = await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => CameraScreen()),
@@ -485,11 +829,50 @@ class _ChatScreenState extends State<ChatScreen> {
               Icons.attach_file_outlined,
               color: AppColor.primaryColor,
             ),
-            onPressed: _isUploading ? null : _sendImage,
+            onPressed: _isUploading
+                ? null
+                : () {
+                    setState(() {
+                      _showEmojiPicker = false;
+                    });
+                    _sendImage;
+                  },
+          ),
+          // EMOJI BUTTON
+          IconButton(
+            icon: Icon(
+              _showEmojiPicker ? Icons.keyboard : Icons.sentiment_satisfied_alt,
+              color: AppColor.primaryColor,
+            ),
+            onPressed: () {
+              setState(() {
+                _showEmojiPicker = !_showEmojiPicker;
+                if (_showEmojiPicker) {
+                  FocusScope.of(context).unfocus(); // Hide keyboard
+                } else {
+                  _emojiFocusNode.requestFocus(); // Show keyboard
+                }
+              });
+            },
           ),
           Expanded(
             child: TextField(
               controller: _textController,
+              focusNode: _emojiFocusNode,
+              onTap: () {
+                if (_showEmojiPicker) {
+                  setState(() {
+                    _showEmojiPicker =
+                        false; // Hide emoji picker when text field is tapped
+                  });
+                }
+              },
+              onChanged: (text) {
+                if (_debounce?.isActive ?? false) _debounce!.cancel();
+                _debounce = Timer(const Duration(milliseconds: 500), () {
+                  _setTypingStatus(text.isNotEmpty);
+                });
+              },
               decoration: InputDecoration(
                 hintText: "Type your message here",
                 filled: true,
@@ -507,16 +890,21 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           SizedBox(width: 8.0),
           GestureDetector(
-            onTap: () {
-              _sendMessage(text: _textController.text);
-            },
+            onTap: _isUploading
+                ? null
+                : () {
+                    _sendMessage(text: _textController.text);
+                    _setTypingStatus(false);
+                  },
             child: Container(
               padding: EdgeInsets.all(15),
               decoration: BoxDecoration(
                 color: AppColor.primaryColor,
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.send, color: Colors.white),
+              child: _editingMessageId != null
+                  ? Icon(Icons.check, color: Colors.white)
+                  : Icon(Icons.send, color: Colors.white),
             ),
           ),
         ],
