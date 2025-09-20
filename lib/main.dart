@@ -35,11 +35,10 @@ void main() async {
 
   await flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin
-      >()
+          AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
 
-  // 🔹 Initialize local notifications
+  // Initialize local notifications
   const AndroidInitializationSettings androidInit =
       AndroidInitializationSettings('ic_stat_notification_bell');
 
@@ -87,7 +86,7 @@ class MyApp extends StatelessWidget {
 
 String? currentChatUserId;
 
-/// 🔹 Foreground message listener setup (call this from HomeScreen initState)
+///  Foreground message listener setup (call this from HomeScreen initState)
 void setupFirebaseListeners() {
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
     print("--- Foreground Message ---");
@@ -114,17 +113,17 @@ void setupFirebaseListeners() {
         payload: jsonEncode(message.data),
       );
 
-      // 🔹 Auto navigate immediately
+      // Auto navigate immediately
       _handleNavigation(message.data);
     }
   });
 
-  // 🔹 App opened from background by tapping notification
+  // App opened from background by tapping notification
   FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
     print("--- Notification tapped from background ---");
     _handleNavigation(message.data);
   });
-  // 🔹 App opened from terminated state
+  // App opened from terminated state
   FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
     if (message != null) {
       print("--- App opened from terminated state ---");
@@ -135,7 +134,7 @@ void setupFirebaseListeners() {
   });
 }
 
-/// 🔹 Navigate to chat screen
+/// Navigate to chat screen
 void _handleNavigation(Map<String, dynamic> data) {
   final senderEmail = data['senderEmail'];
   final senderID = data['senderID'];

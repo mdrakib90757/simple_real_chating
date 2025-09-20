@@ -33,10 +33,8 @@ class ChatService {
     String? type,
     RepliedMessageInfo? repliedMessage,
   }) async {
-    final receiverDoc = await _firestore
-        .collection('users')
-        .doc(receiverId)
-        .get();
+    final receiverDoc =
+        await _firestore.collection('users').doc(receiverId).get();
 
     if (!receiverDoc.exists) return;
     final senderEmail = FirebaseAuth.instance.currentUser?.email;
@@ -65,26 +63,25 @@ class ChatService {
         .doc(chatRoom)
         .collection('messages')
         .add({
-          'text': message,
-          'imageUrl': imageUrl,
-          'type': type ?? (imageUrl != null ? 'image' : 'text'),
-          'senderId': senderId,
-          'receiverId': receiverId,
-          'timestamp': FieldValue.serverTimestamp(),
-          'senderEmail': FirebaseAuth.instance.currentUser?.email ?? "",
-          'senderName': senderName,
-          'timestamp': timestamp,
-          'repliedTo': repliedMessage?.toJson(),
-          'isRead': false, // Initialize as unread
-          'readAt': null, // Initialize read timestamp
-        });
+      'text': message,
+      'imageUrl': imageUrl,
+      'type': type ?? (imageUrl != null ? 'image' : 'text'),
+      'senderId': senderId,
+      'receiverId': receiverId,
+      'timestamp': FieldValue.serverTimestamp(),
+      'senderEmail': FirebaseAuth.instance.currentUser?.email ?? "",
+      'senderName': senderName,
+      'timestamp': timestamp,
+      'repliedTo': repliedMessage?.toJson(),
+      'isRead': false, // Initialize as unread
+      'readAt': null, // Initialize read timestamp
+    });
 
     await _firestore.collection('chat_rooms').doc(chatRoom).set({
       'participants': [senderId, receiverId],
       'participant_info': {
         senderId: {
-          'email':
-              senderDoc.data()?['email'] ??
+          'email': senderDoc.data()?['email'] ??
               FirebaseAuth.instance.currentUser?.email ??
               "Unknown",
           'photoUrl': senderDoc.data()?['photoUrl'],

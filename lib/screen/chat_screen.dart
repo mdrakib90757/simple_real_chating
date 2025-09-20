@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -10,9 +11,12 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:web_socket_app/model/message_model/message_model.dart';
 import 'package:web_socket_app/screen/camera/cameraScreen.dart';
+import 'package:web_socket_app/screen/photo_display_screen/photo_display_screen.dart';
+import 'package:web_socket_app/screen/video_display_screen/video_display_screen.dart';
 import 'package:web_socket_app/utils/color.dart';
 import '../ChatService/chatService.dart';
 import 'package:web_socket_app/main.dart';
+import 'package:flutter/foundation.dart' as foundation;
 
 class ChatScreen extends StatefulWidget {
   final String receiverEmail;
@@ -275,11 +279,12 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _setTypingStatus(bool isTyping) {
-    _typingStatusRef
-        ?.set({'isTyping': isTyping, 'timestamp': ServerValue.timestamp})
-        .catchError((error) {
-          print("Failed to set typing status: $error");
-        });
+    _typingStatusRef?.set({
+      'isTyping': isTyping,
+      'timestamp': ServerValue.timestamp
+    }).catchError((error) {
+      print("Failed to set typing status: $error");
+    });
   }
 
   //delete  message dialog
@@ -394,9 +399,9 @@ class _ChatScreenState extends State<ChatScreen> {
           .collection('messages')
           .doc(messageId)
           .update({
-            'text': newText,
-            'editedAt': FieldValue.serverTimestamp(), // Add an 'editedAt' field
-          });
+        'text': newText,
+        'editedAt': FieldValue.serverTimestamp(), // Add an 'editedAt' field
+      });
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text("Message updated!")));
@@ -493,46 +498,36 @@ class _ChatScreenState extends State<ChatScreen> {
                 )
               : const SizedBox.shrink(),
           _buildMessageComposer(),
-
-          // Offstage(
-          //   offstage: !_showEmojiPicker,
-          //   child: SizedBox(
-          //     height: 250,
-          //     child:EmojiPicker(
-          //       textEditingController: _textController,
-          //       config: Config(
-          //         columns: 7,
-          //         emojiSizeMax: 32 * (foundation.defaultTargetPlatform == TargetPlatform.iOS ? 1.30 : 1.0),
-          //         verticalSpacing: 0,
-          //         horizontalSpacing: 0,
-          //         gridPadding: EdgeInsets.zero,
-          //         initCategory:Category.RECENT, // Correct usage of Category enum
-          //         bgColor: const Color(0xFFF2F2F2),
-          //         indicatorColor: AppColor.primaryColor,
-          //         iconColor: Colors.grey,
-          //         iconColorSelected: AppColor.primaryColor,
-          //         progressIndicatorColor: AppColor.primaryColor,
-          //         backspaceColor: AppColor.primaryColor,
-          //         skinToneDialogBgColor: Colors.white,
-          //         skinToneIndicatorColor: Colors.grey,
-          //         enableSkinTones: true,
-          //         recentTabBehavior: RecentTabBehavior.POPULAR,
-          //         recentsLimit: 28,
-          //         noRecents: const Text(
-          //           'No Recents',
-          //           style: TextStyle(fontSize: 20, color: Colors.black26),
-          //           textAlign: TextAlign.center,
-          //         ),
-          //         loadingIndicator: const SizedBox.shrink(),
-          //         tabIndicatorAnimDuration: kTabScrollDuration,
-          //         categoryIcons: const CategoryIcons(),
-          //         buttonMode: ButtonMode.MATERIAL,
-          //         checkPlatformCompatibility: true,
-          //       ),
-          //     ),
-          //
-          //   ),
-          // ),
+          Offstage(
+            offstage: !_showEmojiPicker,
+            child: SizedBox(
+              height: 250,
+              child: EmojiPicker(
+                onBackspacePressed: () {},
+                textEditingController: _textController,
+                config: Config(
+                  height: 256,
+                  checkPlatformCompatibility: true,
+                  emojiViewConfig: EmojiViewConfig(
+                    backgroundColor: Colors.white,
+                    emojiSizeMax: 28 *
+                        (foundation.defaultTargetPlatform == TargetPlatform.iOS
+                            ? 1.20
+                            : 1.0),
+                  ),
+                  viewOrderConfig: const ViewOrderConfig(
+                    top: EmojiPickerItem.categoryBar,
+                    middle: EmojiPickerItem.emojiView,
+                    bottom: EmojiPickerItem.searchBar,
+                  ),
+                  skinToneConfig: const SkinToneConfig(),
+                  categoryViewConfig: const CategoryViewConfig(),
+                  bottomActionBarConfig: const BottomActionBarConfig(),
+                  searchViewConfig: const SearchViewConfig(),
+                ),
+              ),
+            ),
+          )
         ],
       ),
     );
@@ -630,9 +625,8 @@ class _ChatScreenState extends State<ChatScreen> {
           });
         },
         child: Column(
-          crossAxisAlignment: isMe
-              ? CrossAxisAlignment.end
-              : CrossAxisAlignment.start,
+          crossAxisAlignment:
+              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             Padding(
               padding: const EdgeInsets.only(left: 10, right: 10, bottom: 4),
@@ -659,7 +653,6 @@ class _ChatScreenState extends State<ChatScreen> {
                 children: [
                   if (message.repliedTo != null)
                     _buildRepliedMessageWidget(message.repliedTo!),
-
                   Padding(
                     padding: (message.repliedTo != null)
                         ? const EdgeInsets.fromLTRB(8, 0, 8, 8)
@@ -703,54 +696,54 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                           )
                         : message.type == "video"
-                        ? GestureDetector(
-                            onTap: () {
-                              if (message.imageUrl != null) {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => DisplayVideoScreen(
-                                      videoPath: message.imageUrl!,
-                                      onSend: (_) {},
-                                    ),
+                            ? GestureDetector(
+                                onTap: () {
+                                  if (message.imageUrl != null) {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => DisplayVideoScreen(
+                                          videoPath: message.imageUrl!,
+                                          onSend: (_) {},
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(15.0),
+                                  child: Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      Image.network(
+                                        getVideoThumbnail(
+                                            message.imageUrl ?? ""),
+                                        height: 200,
+                                        width: 200,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Container(
+                                          height: 200,
+                                          width: 200,
+                                          color: Colors.black26,
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.play_circle_fill,
+                                        size: 50,
+                                        color: Colors.white,
+                                      ),
+                                    ],
                                   ),
-                                );
-                              }
-                            },
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(15.0),
-                              child: Stack(
-                                alignment: Alignment.center,
-                                children: [
-                                  Image.network(
-                                    getVideoThumbnail(message.imageUrl ?? ""),
-                                    height: 200,
-                                    width: 200,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => Container(
-                                      height: 200,
-                                      width: 200,
-                                      color: Colors.black26,
-                                    ),
-                                  ),
-                                  Icon(
-                                    Icons.play_circle_fill,
-                                    size: 50,
-                                    color: Colors.white,
-                                  ),
-                                ],
+                                ),
+                              )
+                            : SelectableText(
+                                message.text ?? "",
+                                style: TextStyle(
+                                  color: isMe ? Colors.white : Colors.black87,
+                                  fontSize: 16,
+                                ),
                               ),
-                            ),
-                          )
-                        : SelectableText(
-                            message.text ?? "",
-                            style: TextStyle(
-                              color: isMe ? Colors.white : Colors.black87,
-                              fontSize: 16,
-                            ),
-                          ),
                   ),
-
                   if (data['editedAt'] != null)
                     Padding(
                       padding: const EdgeInsets.only(
@@ -767,7 +760,6 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       ),
                     ),
-
                   if (readStatusIcon !=
                       null) // Display read status icon if available
                     Padding(
@@ -835,7 +827,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     setState(() {
                       _showEmojiPicker = false;
                     });
-                    _sendImage;
+                    _sendImage();
                   },
           ),
           // EMOJI BUTTON
@@ -912,6 +904,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  // build reply preview
   Widget _buildReplyPreview() {
     if (_repliedMessage == null) {
       return const SizedBox.shrink();

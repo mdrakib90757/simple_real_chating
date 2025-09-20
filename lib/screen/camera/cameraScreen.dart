@@ -10,6 +10,7 @@ import 'package:video_player/video_player.dart';
 import 'package:web_socket_app/utils/color.dart';
 import 'dart:io';
 import '../../main.dart';
+import '../photo_display_screen/photo_display_screen.dart';
 
 class CameraScreen extends StatefulWidget {
   @override
@@ -57,25 +58,22 @@ class _CameraScreenState extends State<CameraScreen> {
       enableAudio: true,
     );
 
-    _initializeControllerFuture = _controller!
-        .initialize()
-        .then((_) async {
-          await _controller!.setFlashMode(
-            _isFlashOn ? FlashMode.torch : FlashMode.off,
-          );
-          return null;
-        })
-        .catchError((error) {
-          print(': $error');
-          _controller = null;
-          _initializeControllerFuture = null;
-          if (mounted) {
-            setState(() {});
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Camera initialization error')),
-            );
-          }
-        });
+    _initializeControllerFuture = _controller!.initialize().then((_) async {
+      await _controller!.setFlashMode(
+        _isFlashOn ? FlashMode.torch : FlashMode.off,
+      );
+      return null;
+    }).catchError((error) {
+      print(': $error');
+      _controller = null;
+      _initializeControllerFuture = null;
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Camera initialization error')),
+        );
+      }
+    });
 
     if (mounted) setState(() {});
   }
@@ -298,226 +296,6 @@ class _CameraScreenState extends State<CameraScreen> {
                         ),
                       ],
                     ),
-                  ),
-                ),
-              ],
-            );
-          } else {
-            return Center(
-              child: CircularProgressIndicator(
-                color: AppColor.primaryColor,
-                strokeWidth: 2.5,
-              ),
-            );
-          }
-        },
-      ),
-    );
-  }
-}
-
-class DisplayPictureScreen extends StatefulWidget {
-  final String imagePath;
-  final Function(String)? onSend;
-
-  const DisplayPictureScreen({Key? key, required this.imagePath, this.onSend})
-    : super(key: key);
-
-  @override
-  State<DisplayPictureScreen> createState() => _DisplayPictureScreenState();
-}
-
-class _DisplayPictureScreenState extends State<DisplayPictureScreen> {
-  bool _isNetworkImage(String path) {
-    return path.startsWith('http://') || path.startsWith('https://');
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    bool isNetwork = _isNetworkImage(widget.imagePath);
-
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: AppColor.primaryColor,
-        centerTitle: true,
-        title: Text(
-          isNetwork ? 'View Photo' : 'Preview Photo',
-          style: TextStyle(color: Colors.white),
-        ),
-      ),
-      body: Column(
-        children: [
-          // Image.file(File(widget.imagePath)),
-          // SizedBox(height: 15),
-          // CircleAvatar(
-          //   radius: 25,
-          //   backgroundColor: AppColor.primaryColor,
-          //   child: IconButton(
-          //     onPressed: () async {
-          //       if (widget.onSend != null) {
-          //         await widget.onSend!(widget.imagePath);
-          //       }
-          //      // Navigator.pop(context);
-          //     },
-          //     icon: Icon(Icons.send, color: Colors.white),
-          //   ),
-          // ),
-          Expanded(
-            // Use Expanded to allow the image to fill available space
-            child: Center(
-              child: isNetwork
-                  ? Image.network(
-                      widget.imagePath,
-                      fit: BoxFit.contain, // Contain within bounds, not crop
-                      loadingBuilder: (context, child, loadingProgress) {
-                        if (loadingProgress == null) return child;
-                        return Center(
-                          child: CircularProgressIndicator(
-                            value: loadingProgress.expectedTotalBytes != null
-                                ? loadingProgress.cumulativeBytesLoaded /
-                                      loadingProgress.expectedTotalBytes!
-                                : null,
-                            color: Colors
-                                .white, // White progress for dark background
-                          ),
-                        );
-                      },
-                      errorBuilder: (context, error, stackTrace) {
-                        return const Icon(
-                          Icons.broken_image,
-                          color: Colors.white,
-                          size: 50,
-                        );
-                      },
-                    )
-                  : Image.file(
-                      // Use Image.file for local paths
-                      File(widget.imagePath),
-                      fit: BoxFit.contain,
-                    ),
-            ),
-          ),
-          if (widget.onSend !=
-              null) // Only show send button if onSend callback is provided
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                vertical: 20.0,
-              ), // Add some padding
-              child: CircleAvatar(
-                radius: 25,
-                backgroundColor: AppColor.primaryColor,
-                child: IconButton(
-                  onPressed: () async {
-                    if (widget.onSend != null) {
-                      await widget.onSend!(widget.imagePath);
-                      // Navigator.pop(context); // Pop after sending
-                    }
-                  },
-                  icon: Icon(Icons.send, color: Colors.white),
-                ),
-              ),
-            ),
-          SizedBox(height: MediaQuery.of(context).padding.bottom + 10),
-        ],
-      ),
-    );
-  }
-}
-
-///video screen
-class DisplayVideoScreen extends StatefulWidget {
-  final String videoPath;
-  final Function(String)? onSend;
-  const DisplayVideoScreen({Key? key, required this.videoPath, this.onSend})
-    : super(key: key);
-
-  @override
-  _DisplayVideoScreenState createState() => _DisplayVideoScreenState();
-}
-
-class _DisplayVideoScreenState extends State<DisplayVideoScreen> {
-  late VideoPlayerController _controller;
-
-  late Future<void> _initializeVideoPlayerFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.videoPath.startsWith("http")) {
-      _controller = VideoPlayerController.network(widget.videoPath);
-    } else {
-      _controller = VideoPlayerController.file(File(widget.videoPath));
-    }
-
-    _initializeVideoPlayerFuture = _controller.initialize().then((_) {
-      _controller.setLooping(true);
-      return null;
-    });
-  }
-
-  @override
-  void dispose() {
-    _controller.pause();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: AppColor.primaryColor,
-        centerTitle: true,
-        title: Text('video', style: TextStyle(color: Colors.white)),
-      ),
-      body: FutureBuilder(
-        future: _initializeVideoPlayerFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.done) {
-            return Column(
-              children: [
-                Center(
-                  child: AspectRatio(
-                    aspectRatio: _controller.value.aspectRatio,
-                    child: VideoPlayer(_controller),
-                  ),
-                ),
-                VideoProgressIndicator(
-                  _controller,
-                  allowScrubbing: true,
-                  colors: VideoProgressColors(
-                    playedColor: Colors.blue,
-                    bufferedColor: Colors.grey,
-                    backgroundColor: Colors.black26,
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(
-                    _controller.value.isPlaying
-                        ? Icons.pause
-                        : Icons.play_arrow,
-                  ),
-                  onPressed: () {
-                    setState(() {
-                      _controller.value.isPlaying
-                          ? _controller.pause()
-                          : _controller.play();
-                    });
-                  },
-                ),
-                CircleAvatar(
-                  radius: 25,
-                  backgroundColor: AppColor.primaryColor,
-                  child: IconButton(
-                    onPressed: () async {
-                      if (widget.onSend != null) {
-                        await widget.onSend!(widget.videoPath);
-                      }
-                      Navigator.pop(context);
-                    },
-                    icon: Icon(Icons.send, color: Colors.white),
                   ),
                 ),
               ],

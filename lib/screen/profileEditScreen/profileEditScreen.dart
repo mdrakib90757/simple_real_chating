@@ -87,9 +87,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             CircleAvatar(
               backgroundColor: AppColor.primaryColor,
               radius: 60,
-              backgroundImage: _imageFile != null
-                  ? FileImage(_imageFile!)
-                  : null,
+              backgroundImage:
+                  _imageFile != null ? FileImage(_imageFile!) : null,
               child: _imageFile == null
                   ? const Icon(Icons.person, size: 60, color: Colors.white)
                   : null,

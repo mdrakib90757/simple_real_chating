@@ -55,10 +55,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 .collection('users')
                 .doc(user.uid)
                 .set({
-                  'fcmToken': fcmToken,
-                  'email': user.email,
-                  'updatedAt': FieldValue.serverTimestamp(),
-                }, SetOptions(merge: true));
+              'fcmToken': fcmToken,
+              'email': user.email,
+              'updatedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
             print(" FCM token saved: $fcmToken");
           }
 

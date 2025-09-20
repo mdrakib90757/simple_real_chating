@@ -168,13 +168,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ),
               currentAccountPicture: CircleAvatar(
-                backgroundImage:
-                    (currentUser.photoURL != null &&
+                backgroundImage: (currentUser.photoURL != null &&
                         currentUser.photoURL!.isNotEmpty)
                     ? NetworkImage(currentUser.photoURL!)
                     : null,
-                child:
-                    (currentUser.photoURL == null ||
+                child: (currentUser.photoURL == null ||
                         currentUser.photoURL!.isEmpty)
                     ? Icon(Icons.person, size: 40, color: AppColor.primaryColor)
                     : null,
@@ -208,8 +206,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         .collection('users')
                         .doc(user.uid)
                         .update({
-                          'fcmTokens': FieldValue.arrayRemove([token]),
-                        });
+                      'fcmTokens': FieldValue.arrayRemove([token]),
+                    });
                     print("FCM token removed on logout.");
                   }
 
@@ -298,10 +296,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         .collection('users')
                         .doc(uid)
                         .set({
-                          'email': email,
-                          'fcmTokens': [],
-                          'createdAt': FieldValue.serverTimestamp(),
-                        });
+                      'email': email,
+                      'fcmTokens': [],
+                      'createdAt': FieldValue.serverTimestamp(),
+                    });
                     print("Receiver user created in Firestore: $uid");
                   }
 
@@ -417,8 +415,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   chatData['participant_info'][otherUserId];
               final String otherUserEmail =
                   (otherUserInfo['email'] ?? '').isNotEmpty
-                  ? otherUserInfo['email']
-                  : 'Unknown User';
+                      ? otherUserInfo['email']
+                      : 'Unknown User';
               final String? otherUserPhotoUrl = otherUserInfo['photoUrl'];
 
               final Timestamp lastMessageTimestamp =
