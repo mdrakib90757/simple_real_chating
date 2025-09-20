@@ -1,45 +1,75 @@
 import 'dart:io';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:convert'; // Import for json decoding
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http; // Import for HTTP requests
 
 class ProfileService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
+  final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  // Cloudinary configuration (replace with your actual details)
+  static const String _cloudName = "dlqufneob";
+  static const String _uploadPreset = "chat_app_unsigned";
 
   Future<String?> uploadProfileImage(File imageFile) async {
     try {
-      if (_auth.currentUser == null) return null;
+      final url = Uri.parse(
+        "https://api.cloudinary.com/v1_1/$_cloudName/image/upload",
+      );
 
-      final String filePath = 'profile_pictures/${_auth.currentUser!.uid}';
-      final Reference storageRef = _storage.ref().child(filePath);
+      final request = http.MultipartRequest('POST', url)
+        ..fields['upload_preset'] = _uploadPreset
+        ..files.add(await http.MultipartFile.fromPath('file', imageFile.path));
 
-      await storageRef.putFile(imageFile);
+      final response = await request.send();
 
-      final String downloadURL = await storageRef.getDownloadURL();
-      return downloadURL;
+      if (response.statusCode == 200) {
+        final responseData = await response.stream.bytesToString();
+        final jsonMap = json.decode(responseData);
+        final imageUrl = jsonMap['secure_url']; // This is the URL of the uploaded image
+        return imageUrl;
+      } else {
+        print("Cloudinary image upload failed with status: ${response.statusCode}");
+        final errorBody = await response.stream.bytesToString();
+        print("Cloudinary error response: $errorBody");
+        return null;
+      }
     } catch (e) {
-      print("Error uploading profile image: $e");
+      print("Error uploading profile image to Cloudinary: $e");
       return null;
     }
   }
 
   Future<bool> updateUserProfile({
-    String? displayName,
+    String? name,
     String? photoURL,
   }) async {
+    final User? currentUser = _firebaseAuth.currentUser;
+    if (currentUser == null) {
+      print("No user logged in.");
+      return false;
+    }
+
     try {
-      final User? user = _auth.currentUser;
-      if (user == null) return false;
-      if (displayName != null) await user.updateDisplayName(displayName);
-      if (photoURL != null) await user.updatePhotoURL(photoURL);
-      if (photoURL != null) {
-        await _firestore.collection('users').doc(user.uid).update({
-          'photoUrl': photoURL,
-        });
+      // Update Firebase Auth profile
+      if (name != null || photoURL != null) {
+        await currentUser.updateDisplayName(name);
+        await currentUser.updatePhotoURL(photoURL);
+        // Reload user to get updated data immediately
+        await currentUser.reload();
       }
-      await user.reload();
+
+      // Update Firestore user document
+      final DocumentReference userRef = _firestore.collection('users').doc(currentUser.uid);
+      final Map<String, dynamic> updateData = {};
+      if (name != null) updateData['name'] = name;
+      if (photoURL != null) updateData['photoUrl'] = photoURL; // Make sure this matches your Firestore field name
+
+      if (updateData.isNotEmpty) {
+        await userRef.update(updateData);
+      }
+
       return true;
     } catch (e) {
       print("Error updating user profile: $e");

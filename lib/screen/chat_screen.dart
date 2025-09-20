@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -123,38 +124,127 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // send image
-  Future<void> _sendImage() async {
-    final picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-    if (image == null) return;
+  // send file with image
+  Future<void> _sendFile() async {
+    // Show a bottom sheet to let the user choose between image, video (gallery), or other files
+    final pickedOption = await showModalBottomSheet<String>(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.image),
+                title: const Text('Send Image from Gallery'),
+                onTap: () => Navigator.pop(context, 'image'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.videocam),
+                title: const Text('Send Video from Gallery'),
+                onTap: () => Navigator.pop(context, 'video'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.insert_drive_file),
+                title: const Text('Send Document (PDF, etc.)'),
+                onTap: () => Navigator.pop(context, 'document'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
 
+    if (pickedOption == null) return;
+
+    if (pickedOption == 'image') {
+      final picker = ImagePicker();
+      final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+      if (image == null) return;
+      await _uploadToCloudinary(image.path, 'image');
+    } else if (pickedOption == 'video') {
+      final picker = ImagePicker();
+      final XFile? video = await picker.pickVideo(source: ImageSource.gallery);
+      if (video == null) return;
+      await _uploadToCloudinary(video.path, 'video');
+    } else if (pickedOption == 'document') {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: [
+          'pdf',
+          'doc',
+          'docx',
+          'txt',
+          'csv'
+        ],
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final PlatformFile file = result.files.first;
+      if (file.path == null) return;
+
+      await _uploadToCloudinary(file.path!, 'document', fileName: file.name);
+    }
+  }
+
+  // Generic Cloudinary upload function
+  Future<void> _uploadToCloudinary(String filePath, String fileType,
+      {String? fileName}) async {
     setState(() => _isUploading = true);
 
     const String cloudName = "dlqufneob";
-    const String uploadPreset = "chat_app_unsigned";
+    String uploadPreset;
+    String cloudinaryResourceType;
+
+    if (fileType == 'image') {
+      uploadPreset = "chat_app_unsigned";
+      cloudinaryResourceType = "image";
+    } else if (fileType == 'video') {
+      uploadPreset = "chat_app_unsigned";
+      cloudinaryResourceType = "video";
+    } else if (fileType == 'document') {
+      uploadPreset =
+          "chat_app_unsigned";
+      cloudinaryResourceType = "raw";
+    } else {
+      print("Unsupported file type for upload: $fileType");
+      setState(() => _isUploading = false);
+      return;
+    }
+
     final url = Uri.parse(
-      "https://api.cloudinary.com/v1_1/$cloudName/image/upload",
-    );
+        "https://api.cloudinary.com/v1_1/$cloudName/$cloudinaryResourceType/upload");
 
     try {
       final request = http.MultipartRequest('POST', url)
         ..fields['upload_preset'] = uploadPreset
-        ..files.add(await http.MultipartFile.fromPath('file', image.path));
+        ..files.add(await http.MultipartFile.fromPath('file', filePath,
+            filename: fileName));
 
       final response = await request.send();
 
       if (response.statusCode == 200) {
         final responseData = await response.stream.bytesToString();
         final jsonMap = json.decode(responseData);
-        final imageUrl = jsonMap['secure_url'];
+        final fileUrl = jsonMap['secure_url'];
 
-        await _sendMessage(imageUrl: imageUrl);
+        await chatService.sendMessage(
+          context: context,
+          senderId: currentUser.uid,
+          receiverId: widget.receiverUserId,
+          message: null,
+          imageUrl: fileUrl,
+          type: fileType,
+          fileName: fileName,
+        );
       } else {
-        print("Image upload failed with status: ${response.statusCode}");
+        print("$fileType upload failed with status: ${response.statusCode}");
+        final errorBody = await response.stream.bytesToString();
+        print("Error response: $errorBody");
       }
     } catch (e) {
-      print("Error uploading image: $e");
+      print("Error uploading $fileType: $e");
     } finally {
       setState(() => _isUploading = false);
     }
@@ -400,7 +490,7 @@ class _ChatScreenState extends State<ChatScreen> {
           .doc(messageId)
           .update({
         'text': newText,
-        'editedAt': FieldValue.serverTimestamp(), // Add an 'editedAt' field
+        'editedAt': FieldValue.serverTimestamp(),
       });
       ScaffoldMessenger.of(
         context,
@@ -471,6 +561,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       type: data['type'] ?? 'text',
                       isMe: data['senderId'] == currentUser.uid,
                       repliedTo: repliedMessageInfo,
+                      fileName: data['fileName'],
                     );
                     return _buildMessageBubble(message, doc);
                   },
@@ -536,7 +627,6 @@ class _ChatScreenState extends State<ChatScreen> {
   // Helper function to generate Cloudinary video thumbnail
   String getVideoThumbnail(String videoUrl) {
     if (!videoUrl.contains("/upload/")) return "";
-    // so_0 = first frame, so_2 = second frame, etc.
     return videoUrl
         .replaceFirst("/upload/", "/upload/so_0/")
         .replaceAll(".mp4", ".jpg");
@@ -736,13 +826,70 @@ class _ChatScreenState extends State<ChatScreen> {
                                   ),
                                 ),
                               )
-                            : SelectableText(
-                                message.text ?? "",
-                                style: TextStyle(
-                                  color: isMe ? Colors.white : Colors.black87,
-                                  fontSize: 16,
-                                ),
-                              ),
+                            : message.type == "document"
+                                ? GestureDetector(
+                                    onTap: () async {
+                                      if (message.imageUrl != null) {
+                                        print(
+                                            "Opening document: ${message.imageUrl!}"); // Placeholder
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                              content: Text(
+                                                  "Tapped on document: ${message.fileName ?? 'File'}")),
+                                        );
+                                      }
+                                    },
+                                    child: Container(
+                                      padding: EdgeInsets.all(12),
+                                      constraints:
+                                          BoxConstraints(maxWidth: 200),
+                                      decoration: BoxDecoration(
+                                        color: isMe
+                                            ? Colors.white24
+                                            : Colors.grey.shade300,
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                            color: Colors.grey.shade400,
+                                            width: 0.5),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.insert_drive_file,
+                                              color: isMe
+                                                  ? Colors.white
+                                                  : AppColor.primaryColor),
+                                          SizedBox(width: 8),
+                                          Flexible(
+                                            child: Text(
+                                              message.fileName ?? "Document",
+                                              style: TextStyle(
+                                                color: isMe
+                                                    ? Colors.white
+                                                    : Colors.black87,
+                                                fontSize: 14,
+                                                decoration:
+                                                    TextDecoration.underline,
+                                                decorationColor: isMe
+                                                    ? Colors.white
+                                                    : Colors.black87,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                : SelectableText(
+                                    message.text ?? "",
+                                    style: TextStyle(
+                                      color:
+                                          isMe ? Colors.white : Colors.black87,
+                                      fontSize: 16,
+                                    ),
+                                  ),
                   ),
                   if (data['editedAt'] != null)
                     Padding(
@@ -827,7 +974,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     setState(() {
                       _showEmojiPicker = false;
                     });
-                    _sendImage();
+                    // _sendImage();
+                    _sendFile();
                   },
           ),
           // EMOJI BUTTON
@@ -840,9 +988,9 @@ class _ChatScreenState extends State<ChatScreen> {
               setState(() {
                 _showEmojiPicker = !_showEmojiPicker;
                 if (_showEmojiPicker) {
-                  FocusScope.of(context).unfocus(); // Hide keyboard
+                  FocusScope.of(context).unfocus();
                 } else {
-                  _emojiFocusNode.requestFocus(); // Show keyboard
+                  _emojiFocusNode.requestFocus();
                 }
               });
             },

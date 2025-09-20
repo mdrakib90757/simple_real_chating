@@ -1,8 +1,8 @@
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:web_socket_app/utils/color.dart';
-
 import '../../profileService/profileService.dart';
 
 class ProfileEditScreen extends StatefulWidget {
@@ -30,7 +30,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   }
 
   Future<void> _uploadAndSaveProfile() async {
-    if (_imageFile == null) return;
+    if (_imageFile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please select an image first.")),
+      );
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -41,6 +46,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     );
 
     if (downloadURL != null) {
+      // Correctly call updateUserProfile with the obtained Cloudinary URL
       final bool success = await _profileService.updateUserProfile(
         photoURL: downloadURL,
       );
@@ -56,6 +62,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           const SnackBar(content: Text("Failed to update profile.")),
         );
       }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Image upload failed.")),
+      );
     }
 
     setState(() {
@@ -71,7 +81,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           onPressed: () {
             Navigator.pop(context);
           },
-          icon: Icon(Icons.arrow_back, color: Colors.white),
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
         ),
         backgroundColor: AppColor.primaryColor,
         centerTitle: true,
@@ -88,7 +98,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               backgroundColor: AppColor.primaryColor,
               radius: 60,
               backgroundImage:
-                  _imageFile != null ? FileImage(_imageFile!) : null,
+              _imageFile != null ? FileImage(_imageFile!) : null,
               child: _imageFile == null
                   ? const Icon(Icons.person, size: 60, color: Colors.white)
                   : null,
@@ -114,8 +124,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             else
               ElevatedButton.icon(
                 onPressed: _imageFile != null ? _uploadAndSaveProfile : null,
-                icon: const Icon(Icons.save),
-                label: const Text("Save Profile Picture"),
+                icon: const Icon(Icons.save, color: Colors.white), // Added color for consistency
+                label: const Text("Save Profile Picture", style: TextStyle(color: Colors.white)), // Added color
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColor.primaryColor, // Added color
+                ),
               ),
           ],
         ),

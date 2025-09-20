@@ -32,6 +32,7 @@ class ChatService {
     String? imageUrl,
     String? type,
     RepliedMessageInfo? repliedMessage,
+    String? fileName,
   }) async {
     final receiverDoc =
         await _firestore.collection('users').doc(receiverId).get();
@@ -73,8 +74,9 @@ class ChatService {
       'senderName': senderName,
       'timestamp': timestamp,
       'repliedTo': repliedMessage?.toJson(),
-      'isRead': false, // Initialize as unread
-      'readAt': null, // Initialize read timestamp
+      'isRead': false,
+      'readAt': null,
+      'fileName': fileName,
     });
 
     await _firestore.collection('chat_rooms').doc(chatRoom).set({
