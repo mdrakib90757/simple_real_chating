@@ -168,11 +168,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ),
               currentAccountPicture: CircleAvatar(
-                backgroundImage: (currentUser.photoURL != null &&
+                backgroundImage:
+                    (currentUser.photoURL != null &&
                         currentUser.photoURL!.isNotEmpty)
                     ? NetworkImage(currentUser.photoURL!)
                     : null,
-                child: (currentUser.photoURL == null ||
+                child:
+                    (currentUser.photoURL == null ||
                         currentUser.photoURL!.isEmpty)
                     ? Icon(Icons.person, size: 40, color: AppColor.primaryColor)
                     : null,
@@ -206,8 +208,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         .collection('users')
                         .doc(user.uid)
                         .update({
-                      'fcmTokens': FieldValue.arrayRemove([token]),
-                    });
+                          'fcmTokens': FieldValue.arrayRemove([token]),
+                        });
                     print("FCM token removed on logout.");
                   }
 
@@ -248,22 +250,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
             return Center(child: Text("No users online"));
           }
-
           final data = Map<String, dynamic>.from(
             snapshot.data!.snapshot.value as Map,
           );
-          final onlineUsers = <Map<String, dynamic>>[];
-
+          final onlineUsersUids = <String>[];
           data.forEach((key, value) {
             if (value['isOnline'] == true && key != currentUser.uid) {
-              onlineUsers.add({
-                'uid': key,
-                'email': value['email'] ?? 'No Email',
-              });
+              onlineUsersUids.add(key);
             }
           });
-
-          if (onlineUsers.isEmpty) {
+          if (onlineUsersUids.isEmpty) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -274,70 +270,132 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             );
           }
-          return ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: onlineUsers.length,
-            itemBuilder: (context, index) {
-              final user = onlineUsers[index];
-              final email = user['email'];
-              final uid = user['uid'];
+          // Now, fetch user details (including photoURL) from Firestore for these UIDs
+          return StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('users')
+                .where(FieldPath.documentId, whereIn: onlineUsersUids)
+                .snapshots(),
+            builder: (context, userSnapshot) {
+              if (userSnapshot.connectionState == ConnectionState.waiting) {
+                return Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                );
+              }
 
-              return GestureDetector(
-                onTap: () async {
-                  // Firestore check before navigating
-                  final userDoc = await FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(uid)
-                      .get();
+              if (!userSnapshot.hasData || userSnapshot.data!.docs.isEmpty) {
+                return Center(child: Text("No user data available."));
+              }
 
-                  if (!userDoc.exists) {
-                    // Optionally create user in Firestore
-                    await FirebaseFirestore.instance
-                        .collection('users')
-                        .doc(uid)
-                        .set({
-                      'email': email,
-                      'fcmTokens': [],
-                      'createdAt': FieldValue.serverTimestamp(),
-                    });
-                    print("Receiver user created in Firestore: $uid");
-                  }
+              final onlineUsersWithData = userSnapshot.data!.docs.map((doc) {
+                final userData = doc.data() as Map<String, dynamic>;
+                return {
+                  'uid': doc.id,
+                  'email': userData['email'] ?? 'No Email',
+                  'photoUrl':
+                      userData['photoUrl'], // Get photoUrl from Firestore
+                };
+              }).toList();
 
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ChatScreen(
-                        receiverEmail: email,
-                        receiverID: uid,
+              return ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: onlineUsersWithData.length,
+                itemBuilder: (context, index) {
+                  final user = onlineUsersWithData[index];
+                  final email = user['email'];
+                  final uid = user['uid'];
+                  final photoUrl = user['photoUrl'];
+
+                  return GestureDetector(
+                    onTap: () async {
+                      // Firestore check before navigating
+                      final userDoc = await FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(uid)
+                          .get();
+
+                      if (!userDoc.exists) {
+                        // Optionally create user in Firestore
+                        await FirebaseFirestore.instance
+                            .collection('users')
+                            .doc(uid)
+                            .set({
+                              'email': email,
+                              'fcmTokens': [],
+                              'createdAt': FieldValue.serverTimestamp(),
+                              'photoUrl': null,
+                            });
+                        print("Receiver user created in Firestore: $uid");
+                      }
+                      final String? currentUserPhotoUrl =
+                          FirebaseAuth.instance.currentUser!.photoURL;
+                      final String? receiverPhotoUrl = photoUrl;
+                      final Map<String, dynamic> participantInfo = {
+                        currentUser.uid: {
+                          'email': currentUser.email,
+                          'photoUrl': currentUserPhotoUrl,
+                        },
+                        uid: {'email': email, 'photoUrl': receiverPhotoUrl},
+                      };
+
+                      await _updateChatRoomParticipantInfo(
                         currentUserId: currentUser.uid,
-                        receiverUserId: uid,
+                        receiverId: uid,
+                        participantInfo: participantInfo,
+                      );
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ChatScreen(
+                            receiverEmail: email,
+                            receiverID: uid,
+                            currentUserId: currentUser.uid,
+                            receiverUserId: uid,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: 80,
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 10,
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircleAvatar(
+                            radius: 25,
+                            backgroundColor: AppColor.primaryColor,
+                            backgroundImage:
+                                (photoUrl != null && photoUrl.isNotEmpty)
+                                ? NetworkImage(
+                                    photoUrl,
+                                  ) // Use photoUrl for online user
+                                : null,
+                            child: (photoUrl == null || photoUrl.isEmpty)
+                                ? Icon(
+                                    Icons.person,
+                                    size: 25,
+                                    color: Colors.white,
+                                  ) // Smaller icon for consistency
+                                : null,
+                          ),
+                          SizedBox(height: 5),
+                          Text(
+                            email.split('@')[0],
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 15),
+                          ),
+                        ],
                       ),
                     ),
                   );
                 },
-                child: Container(
-                  width: 80,
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 10,
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircleAvatar(
-                        radius: 25,
-                        backgroundColor: AppColor.primaryColor,
-                        child: Icon(Icons.person, color: Colors.white),
-                      ),
-                      SizedBox(height: 5),
-                      Text(
-                        email.split('@')[0],
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 15),
-                      ),
-                    ],
-                  ),
-                ),
               );
             },
           );
@@ -415,8 +473,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   chatData['participant_info'][otherUserId];
               final String otherUserEmail =
                   (otherUserInfo['email'] ?? '').isNotEmpty
-                      ? otherUserInfo['email']
-                      : 'Unknown User';
+                  ? otherUserInfo['email']
+                  : 'Unknown User';
               final String? otherUserPhotoUrl = otherUserInfo['photoUrl'];
 
               final Timestamp lastMessageTimestamp =
@@ -432,12 +490,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 leading: CircleAvatar(
                   radius: 25,
-                  backgroundImage: otherUserPhotoUrl != null
-                      ? NetworkImage(otherUserPhotoUrl)
-                      : null,
                   backgroundColor: AppColor.primaryColor,
-                  child: otherUserPhotoUrl == null
-                      ? const Icon(Icons.person, color: Colors.white)
+                  backgroundImage:
+                      (otherUserPhotoUrl != null &&
+                          otherUserPhotoUrl.isNotEmpty)
+                      ? NetworkImage(
+                          otherUserPhotoUrl,
+                        ) // Use otherUserPhotoUrl here!
+                      : null,
+                  child:
+                      (otherUserPhotoUrl == null || otherUserPhotoUrl.isEmpty)
+                      ? Icon(
+                          Icons.person,
+                          size: 25,
+                          color: Colors.white,
+                        ) // Smaller icon for consistency
                       : null,
                 ),
                 title: Text(
@@ -472,5 +539,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         );
       },
     );
+  }
+
+  Future<void> _updateChatRoomParticipantInfo({
+    required String currentUserId,
+    required String receiverId,
+    required Map<String, dynamic> participantInfo,
+  }) async {
+    final List<String> participants = [currentUserId, receiverId]..sort();
+    final String chatRoomId = participants.join('_');
+
+    final chatRoomRef = FirebaseFirestore.instance
+        .collection('chat_rooms')
+        .doc(chatRoomId);
+
+    await chatRoomRef.set({
+      'participants': participants,
+      'participant_info': participantInfo,
+    }, SetOptions(merge: true));
+    print("Chat room participant_info updated for $chatRoomId");
   }
 }

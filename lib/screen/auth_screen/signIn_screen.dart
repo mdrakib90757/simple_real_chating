@@ -55,10 +55,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 .collection('users')
                 .doc(user.uid)
                 .set({
-              'fcmToken': fcmToken,
-              'email': user.email,
-              'updatedAt': FieldValue.serverTimestamp(),
-            }, SetOptions(merge: true));
+                  'fcmToken': fcmToken,
+                  'email': user.email,
+                  'updatedAt': FieldValue.serverTimestamp(),
+                }, SetOptions(merge: true));
             print(" FCM token saved: $fcmToken");
           }
 
@@ -99,7 +99,7 @@ class _LoginScreenState extends State<LoginScreen> {
           errorMessage = "your information is not right? please again try it";
           break;
         default:
-          errorMessage = "login problem? please again try it";
+          errorMessage = "Invalid userInformation! let`s try again";
       }
       if (mounted) {
         ScaffoldMessenger.of(

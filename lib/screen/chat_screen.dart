@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:dio/dio.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,6 +11,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:web_socket_app/model/message_model/message_model.dart';
 import 'package:web_socket_app/screen/camera/cameraScreen.dart';
 import 'package:web_socket_app/screen/photo_display_screen/photo_display_screen.dart';
@@ -18,6 +21,8 @@ import 'package:web_socket_app/utils/color.dart';
 import '../ChatService/chatService.dart';
 import 'package:web_socket_app/main.dart';
 import 'package:flutter/foundation.dart' as foundation;
+import 'package:crypto/crypto.dart';
+import 'package:crypto/crypto.dart';
 
 class ChatScreen extends StatefulWidget {
   final String receiverEmail;
@@ -46,6 +51,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final User currentUser = FirebaseAuth.instance.currentUser!;
   String chatRoomId = "";
   bool _isUploading = false;
+  String? _receiverPhotoUrl;
   RepliedMessageInfo? _repliedMessage;
   String? _editingMessageId;
   String? _repliedMessageId;
@@ -55,6 +61,10 @@ class _ChatScreenState extends State<ChatScreen> {
   Timer? _debounce;
   bool _showEmojiPicker = false;
   final FocusNode _emojiFocusNode = FocusNode();
+  final String cloudinaryApiKey = "911398349135266";
+  final String CLOUDINARY_API_SECRET = "572xxi7X4yqr_3Y-wRcJ7EgJUJs";
+
+  // final String url = "https://api.cloudinary.com/v1_1/$cloudName/$cloudinaryResourceType/destroy";
 
   @override
   void initState() {
@@ -78,6 +88,7 @@ class _ChatScreenState extends State<ChatScreen> {
         });
       }
     });
+    _fetchReceiverPhotoUrl();
   }
 
   @override
@@ -126,8 +137,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // send file with image
   Future<void> _sendFile() async {
-    // Show a bottom sheet to let the user choose between image, video (gallery), or other files
     final pickedOption = await showModalBottomSheet<String>(
+      backgroundColor: Colors.white,
       context: context,
       builder: (BuildContext context) {
         return SafeArea(
@@ -170,13 +181,7 @@ class _ChatScreenState extends State<ChatScreen> {
     } else if (pickedOption == 'document') {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: [
-          'pdf',
-          'doc',
-          'docx',
-          'txt',
-          'csv'
-        ],
+        allowedExtensions: ['pdf', 'doc', 'docx', 'txt', 'csv'],
       );
 
       if (result == null || result.files.isEmpty) return;
@@ -189,8 +194,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   // Generic Cloudinary upload function
-  Future<void> _uploadToCloudinary(String filePath, String fileType,
-      {String? fileName}) async {
+  Future<void> _uploadToCloudinary(
+    String filePath,
+    String fileType, {
+    String? fileName,
+  }) async {
     setState(() => _isUploading = true);
 
     const String cloudName = "dlqufneob";
@@ -204,8 +212,7 @@ class _ChatScreenState extends State<ChatScreen> {
       uploadPreset = "chat_app_unsigned";
       cloudinaryResourceType = "video";
     } else if (fileType == 'document') {
-      uploadPreset =
-          "chat_app_unsigned";
+      uploadPreset = "chat_app_unsigned";
       cloudinaryResourceType = "raw";
     } else {
       print("Unsupported file type for upload: $fileType");
@@ -214,13 +221,19 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     final url = Uri.parse(
-        "https://api.cloudinary.com/v1_1/$cloudName/$cloudinaryResourceType/upload");
+      "https://api.cloudinary.com/v1_1/$cloudName/$cloudinaryResourceType/upload",
+    );
 
     try {
       final request = http.MultipartRequest('POST', url)
         ..fields['upload_preset'] = uploadPreset
-        ..files.add(await http.MultipartFile.fromPath('file', filePath,
-            filename: fileName));
+        ..files.add(
+          await http.MultipartFile.fromPath(
+            'file',
+            filePath,
+            filename: fileName,
+          ),
+        );
 
       final response = await request.send();
 
@@ -228,7 +241,7 @@ class _ChatScreenState extends State<ChatScreen> {
         final responseData = await response.stream.bytesToString();
         final jsonMap = json.decode(responseData);
         final fileUrl = jsonMap['secure_url'];
-
+        final publicId = jsonMap['public_id'];
         await chatService.sendMessage(
           context: context,
           senderId: currentUser.uid,
@@ -237,6 +250,7 @@ class _ChatScreenState extends State<ChatScreen> {
           imageUrl: fileUrl,
           type: fileType,
           fileName: fileName,
+          publicId: publicId,
         );
       } else {
         print("$fileType upload failed with status: ${response.statusCode}");
@@ -271,8 +285,19 @@ class _ChatScreenState extends State<ChatScreen> {
         final responseData = await response.stream.bytesToString();
         final jsonMap = json.decode(responseData);
         final imageUrl = jsonMap['secure_url'];
+        final publicId = jsonMap['public_id'];
 
-        await _sendMessage(imageUrl: imageUrl);
+        //await _sendMessage(imageUrl: imageUrl);
+
+        await chatService.sendMessage(
+          context: context,
+          senderId: currentUser.uid,
+          receiverId: widget.receiverUserId,
+          message: null,
+          imageUrl: imageUrl,
+          type: "image",
+          publicId: publicId,
+        );
       } else {
         print("Image upload failed with status: ${response.statusCode}");
       }
@@ -304,6 +329,7 @@ class _ChatScreenState extends State<ChatScreen> {
         final responseData = await response.stream.bytesToString();
         final jsonMap = json.decode(responseData);
         final videoUrl = jsonMap['secure_url'];
+        final publicId = jsonMap['public_id'];
 
         await chatService.sendMessage(
           context: context,
@@ -312,6 +338,7 @@ class _ChatScreenState extends State<ChatScreen> {
           message: null,
           imageUrl: videoUrl,
           type: "video",
+          publicId: publicId,
         );
       } else {
         print("Video upload failed: ${response.statusCode}");
@@ -369,12 +396,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _setTypingStatus(bool isTyping) {
-    _typingStatusRef?.set({
-      'isTyping': isTyping,
-      'timestamp': ServerValue.timestamp
-    }).catchError((error) {
-      print("Failed to set typing status: $error");
-    });
+    _typingStatusRef
+        ?.set({'isTyping': isTyping, 'timestamp': ServerValue.timestamp})
+        .catchError((error) {
+          print("Failed to set typing status: $error");
+        });
   }
 
   //delete  message dialog
@@ -383,6 +409,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final String? messageText = data['text'];
     final String? imageUrl = data['imageUrl'];
     final String? messageType = data['type'];
+    final String? publicId = data['publicId'];
 
     showModalBottomSheet(
       backgroundColor: Colors.white,
@@ -411,7 +438,12 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 onTap: () {
                   Navigator.pop(context);
-                  _deleteMessage(messageDoc.id, imageUrl, messageType);
+                  _deleteMessage(
+                    messageDoc.id,
+                    imageUrl,
+                    messageType,
+                    publicId,
+                  );
                 },
               ),
             ],
@@ -439,6 +471,7 @@ class _ChatScreenState extends State<ChatScreen> {
     String messageId,
     String? imageUrl,
     String? type,
+    String? publicId,
   ) async {
     bool? confirm = await showDialog<bool>(
       context: context,
@@ -470,13 +503,96 @@ class _ChatScreenState extends State<ChatScreen> {
             .doc(messageId)
             .delete();
 
+        if (imageUrl != null && imageUrl.isNotEmpty && publicId != null) {
+          await _deleteFileFromCloudinary(publicId, type);
+          print("File deleted from Cloudinary.");
+        }
+
         print("Message deleted from Firestore.");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Message deleted successfully.")),
+        );
       } catch (e) {
         print("Error deleting message: $e");
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text("Failed to delete message: $e")));
       }
+    }
+  }
+
+  // Function to delete files from Cloudinary
+  Future<void> _deleteFileFromCloudinary(
+    String publicId,
+    String? fileType,
+  ) async {
+    const String cloudName = "dlqufneob";
+    String cloudinaryResourceType;
+    if (fileType == 'image') {
+      cloudinaryResourceType = "image";
+    } else if (fileType == 'video') {
+      cloudinaryResourceType = "video";
+    } else if (fileType == 'document') {
+      cloudinaryResourceType = "raw";
+    } else {
+      print("Unsupported file type for deletion: $fileType");
+      return;
+    }
+    final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000)
+        .toString();
+    Map<String, String> paramsToSign = {
+      'public_id': publicId,
+      'timestamp': timestamp,
+      'invalidate': 'true',
+    };
+    var sortedKeys = paramsToSign.keys.toList()..sort();
+    String paramString = sortedKeys
+        .map((key) => '$key=${paramsToSign[key]}')
+        .join('&');
+    final String signatureString = '$paramString$CLOUDINARY_API_SECRET';
+    final List<int> bytes = utf8.encode(signatureString);
+    final String signature = sha1.convert(bytes).toString();
+
+    final String url =
+        "https://api.cloudinary.com/v1_1/$cloudName/$cloudinaryResourceType/destroy";
+    print('Attempting to delete Cloudinary file: $publicId (Type: $fileType)');
+    print(
+      'Signature String used: $signatureString',
+    ); // For debugging signature issues
+    print('Generated Signature: $signature');
+
+    try {
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          //'Authorization': 'Basic ' + base64Encode(utf8.encode('$cloudinaryApiKey:$CLOUDINARY_API_SECRET')),
+        },
+        body: jsonEncode({
+          'public_id': publicId,
+          'timestamp': timestamp,
+          'signature': signature,
+          'invalidate': true,
+          'api_key': cloudinaryApiKey,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        if (responseData['result'] == 'ok') {
+          print("Cloudinary file $publicId deleted successfully.");
+        } else {
+          print(
+            "Cloudinary deletion failed for $publicId: ${responseData['result']}",
+          );
+        }
+      } else {
+        print(
+          "Cloudinary deletion API error for $publicId: ${response.statusCode} - ${response.body}",
+        );
+      }
+    } catch (e) {
+      print("Error deleting from Cloudinary for $publicId: $e");
     }
   }
 
@@ -488,10 +604,7 @@ class _ChatScreenState extends State<ChatScreen> {
           .doc(chatRoomId)
           .collection('messages')
           .doc(messageId)
-          .update({
-        'text': newText,
-        'editedAt': FieldValue.serverTimestamp(),
-      });
+          .update({'text': newText, 'editedAt': FieldValue.serverTimestamp()});
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text("Message updated!")));
@@ -503,17 +616,65 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _fetchReceiverPhotoUrl() async {
+    try {
+      DocumentSnapshot userDoc = await _firebaseFirestore
+          .collection('users') // Assuming your user profiles are here
+          .doc(widget.receiverID) // Use the receiver's ID
+          .get();
+
+      if (userDoc.exists) {
+        setState(() {
+          _receiverPhotoUrl = userDoc['photoUrl']; // Assuming 'photoUrl' field
+        });
+      } else {
+        print("Receiver user document not found!");
+      }
+    } catch (e) {
+      print("Error fetching receiver photo URL: $e");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        automaticallyImplyLeading: true,
+        automaticallyImplyLeading: false,
         backgroundColor: AppColor.primaryColor,
-        title: Text(
-          widget.receiverEmail,
-          style: TextStyle(color: Colors.white, fontSize: 15),
+        title: Row(
+          children: [
+            GestureDetector(
+              onTap: () {
+                Navigator.pop(context);
+              },
+              child: Icon(Icons.arrow_back, color: Colors.white),
+            ),
+            SizedBox(width: 10),
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: Colors.white24,
+              backgroundImage:
+                  (_receiverPhotoUrl != null && _receiverPhotoUrl!.isNotEmpty)
+                  ? NetworkImage(_receiverPhotoUrl!)
+                  : null,
+              child: (_receiverPhotoUrl == null || _receiverPhotoUrl!.isEmpty)
+                  ? Icon(Icons.person, size: 24, color: Colors.white)
+                  : null,
+            ),
+
+            SizedBox(width: 8),
+            Text(
+              widget.receiverEmail,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
+
         iconTheme: IconThemeData(color: Colors.white),
       ),
       body: Column(
@@ -562,6 +723,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       isMe: data['senderId'] == currentUser.uid,
                       repliedTo: repliedMessageInfo,
                       fileName: data['fileName'],
+                      publicId: data['publicId'],
                     );
                     return _buildMessageBubble(message, doc);
                   },
@@ -601,7 +763,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   checkPlatformCompatibility: true,
                   emojiViewConfig: EmojiViewConfig(
                     backgroundColor: Colors.white,
-                    emojiSizeMax: 28 *
+                    emojiSizeMax:
+                        28 *
                         (foundation.defaultTargetPlatform == TargetPlatform.iOS
                             ? 1.20
                             : 1.0),
@@ -618,7 +781,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
             ),
-          )
+          ),
         ],
       ),
     );
@@ -699,24 +862,34 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     return GestureDetector(
-      onLongPress: isMe && message.type == 'text'
-          ? () => _showEditDeleteOptions(messageDoc)
-          : null,
+      // onLongPress: isMe && message.type == 'text'
+      //     ? () => _showEditDeleteOptions(messageDoc)
+      //     : null,
+      onLongPress: isMe ? () => _showEditDeleteOptions(messageDoc) : null,
       child: Dismissible(
         key: Key(messageDoc.id),
         direction: DismissDirection.startToEnd,
         onDismissed: (direction) {
           setState(() {
             _repliedMessageId = messageDoc.id;
+            String replyContent = data['text'] ?? "";
+            if (data['type'] == 'image') {
+              replyContent = "📷 Image";
+            } else if (data['type'] == 'video') {
+              replyContent = "📹 Video";
+            } else if (data['type'] == 'document') {
+              replyContent = "📄 ${data['fileName'] ?? 'Document'}";
+            }
             _repliedMessage = RepliedMessageInfo(
-              content: data['text'] ?? "📷 Image",
+              content: replyContent,
               senderEmail: data['senderEmail'],
             );
           });
         },
         child: Column(
-          crossAxisAlignment:
-              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment: isMe
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
           children: [
             Padding(
               padding: const EdgeInsets.only(left: 10, right: 10, bottom: 4),
@@ -756,7 +929,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                   MaterialPageRoute(
                                     builder: (_) => DisplayPictureScreen(
                                       imagePath: message.imageUrl!,
-                                      onSend: (_) {},
+                                      onSend: null,
                                     ),
                                   ),
                                 );
@@ -786,110 +959,178 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                           )
                         : message.type == "video"
-                            ? GestureDetector(
-                                onTap: () {
-                                  if (message.imageUrl != null) {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => DisplayVideoScreen(
-                                          videoPath: message.imageUrl!,
-                                          onSend: (_) {},
+                        ? GestureDetector(
+                            onTap: () {
+                              if (message.imageUrl != null) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => DisplayVideoScreen(
+                                      videoPath: message.imageUrl!,
+                                      onSend: null,
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(15.0),
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  Image.network(
+                                    getVideoThumbnail(message.imageUrl ?? ""),
+                                    height: 200,
+                                    width: 200,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      height: 200,
+                                      width: 200,
+                                      color: Colors.black26,
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.play_circle_fill,
+                                    size: 50,
+                                    color: Colors.white,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : message.type == "document"
+                        ? GestureDetector(
+                            onTap: () async {
+                              if (message.imageUrl != null) {
+                                final url = message.imageUrl!;
+                                final fileName =
+                                    message.fileName ?? 'document.pdf';
+
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text("Downloading $fileName..."),
+                                  ),
+                                );
+
+                                try {
+                                  final directory =
+                                      await getApplicationSupportDirectory();
+                                  final filePath =
+                                      '${directory.path}/$fileName';
+                                  Dio dio = Dio();
+                                  print(
+                                    "Attempting to download from URL: $url",
+                                  );
+
+                                  await dio.download(
+                                    url,
+                                    filePath,
+                                    options: Options(
+                                      validateStatus: (status) {
+                                        return status != null &&
+                                            status >= 200 &&
+                                            status < 300;
+                                      },
+                                    ),
+                                  );
+
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text("Opening $fileName..."),
+                                    ),
+                                  );
+                                  final result = await OpenFilex.open(filePath);
+                                  if (result.type != ResultType.done) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          "Failed to open document: ${result.message}",
                                         ),
                                       ),
                                     );
+                                    print(
+                                      "Failed to open document: ${result.message}",
+                                    );
                                   }
-                                },
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(15.0),
-                                  child: Stack(
-                                    alignment: Alignment.center,
-                                    children: [
-                                      Image.network(
-                                        getVideoThumbnail(
-                                            message.imageUrl ?? ""),
-                                        height: 200,
-                                        width: 200,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) => Container(
-                                          height: 200,
-                                          width: 200,
-                                          color: Colors.black26,
-                                        ),
+                                } on DioException catch (e) {
+                                  // Catch Dio specific exceptions
+                                  String errorMessage =
+                                      "Error downloading document: ";
+                                  if (e.response != null) {
+                                    errorMessage +=
+                                        "Status ${e.response!.statusCode}, Data: ${e.response!.data}";
+                                  } else {
+                                    errorMessage +=
+                                        e.message ?? "Unknown Dio error";
+                                  }
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(errorMessage)),
+                                  );
+                                  print(errorMessage);
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        "Error downloading or opening document: ${e.toString()}",
                                       ),
-                                      Icon(
-                                        Icons.play_circle_fill,
-                                        size: 50,
-                                        color: Colors.white,
-                                      ),
-                                    ],
-                                  ),
+                                    ),
+                                  );
+                                  print(
+                                    "Error downloading or opening document: $e",
+                                  );
+                                }
+                              }
+                            },
+                            child: Container(
+                              padding: EdgeInsets.all(12),
+                              constraints: BoxConstraints(maxWidth: 200),
+                              decoration: BoxDecoration(
+                                color: isMe
+                                    ? Colors.white24
+                                    : Colors.grey.shade300,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: Colors.grey.shade400,
+                                  width: 0.5,
                                 ),
-                              )
-                            : message.type == "document"
-                                ? GestureDetector(
-                                    onTap: () async {
-                                      if (message.imageUrl != null) {
-                                        print(
-                                            "Opening document: ${message.imageUrl!}"); // Placeholder
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                              content: Text(
-                                                  "Tapped on document: ${message.fileName ?? 'File'}")),
-                                        );
-                                      }
-                                    },
-                                    child: Container(
-                                      padding: EdgeInsets.all(12),
-                                      constraints:
-                                          BoxConstraints(maxWidth: 200),
-                                      decoration: BoxDecoration(
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.insert_drive_file,
+                                    color: isMe
+                                        ? Colors.white
+                                        : AppColor.primaryColor,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Flexible(
+                                    child: Text(
+                                      message.fileName ?? "Document",
+                                      style: TextStyle(
                                         color: isMe
-                                            ? Colors.white24
-                                            : Colors.grey.shade300,
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(
-                                            color: Colors.grey.shade400,
-                                            width: 0.5),
+                                            ? Colors.white
+                                            : Colors.black87,
+                                        fontSize: 14,
+                                        decoration: TextDecoration.underline,
+                                        decorationColor: isMe
+                                            ? Colors.white
+                                            : Colors.black87,
                                       ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(Icons.insert_drive_file,
-                                              color: isMe
-                                                  ? Colors.white
-                                                  : AppColor.primaryColor),
-                                          SizedBox(width: 8),
-                                          Flexible(
-                                            child: Text(
-                                              message.fileName ?? "Document",
-                                              style: TextStyle(
-                                                color: isMe
-                                                    ? Colors.white
-                                                    : Colors.black87,
-                                                fontSize: 14,
-                                                decoration:
-                                                    TextDecoration.underline,
-                                                decorationColor: isMe
-                                                    ? Colors.white
-                                                    : Colors.black87,
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  )
-                                : SelectableText(
-                                    message.text ?? "",
-                                    style: TextStyle(
-                                      color:
-                                          isMe ? Colors.white : Colors.black87,
-                                      fontSize: 16,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : SelectableText(
+                            message.text ?? "",
+                            style: TextStyle(
+                              color: isMe ? Colors.white : Colors.black87,
+                              fontSize: 16,
+                            ),
+                          ),
                   ),
                   if (data['editedAt'] != null)
                     Padding(

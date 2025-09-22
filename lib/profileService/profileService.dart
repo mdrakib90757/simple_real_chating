@@ -1,14 +1,14 @@
 import 'dart:io';
-import 'dart:convert'; // Import for json decoding
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:http/http.dart' as http; // Import for HTTP requests
+import 'package:http/http.dart' as http;
 
 class ProfileService {
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Cloudinary configuration (replace with your actual details)
+  // Cloudinary configuration
   static const String _cloudName = "dlqufneob";
   static const String _uploadPreset = "chat_app_unsigned";
 
@@ -27,10 +27,12 @@ class ProfileService {
       if (response.statusCode == 200) {
         final responseData = await response.stream.bytesToString();
         final jsonMap = json.decode(responseData);
-        final imageUrl = jsonMap['secure_url']; // This is the URL of the uploaded image
+        final imageUrl = jsonMap['secure_url'];
         return imageUrl;
       } else {
-        print("Cloudinary image upload failed with status: ${response.statusCode}");
+        print(
+          "Cloudinary image upload failed with status: ${response.statusCode}",
+        );
         final errorBody = await response.stream.bytesToString();
         print("Cloudinary error response: $errorBody");
         return null;
@@ -41,10 +43,7 @@ class ProfileService {
     }
   }
 
-  Future<bool> updateUserProfile({
-    String? name,
-    String? photoURL,
-  }) async {
+  Future<bool> updateUserProfile({String? name, String? photoURL}) async {
     final User? currentUser = _firebaseAuth.currentUser;
     if (currentUser == null) {
       print("No user logged in.");
@@ -56,15 +55,16 @@ class ProfileService {
       if (name != null || photoURL != null) {
         await currentUser.updateDisplayName(name);
         await currentUser.updatePhotoURL(photoURL);
-        // Reload user to get updated data immediately
         await currentUser.reload();
       }
 
       // Update Firestore user document
-      final DocumentReference userRef = _firestore.collection('users').doc(currentUser.uid);
+      final DocumentReference userRef = _firestore
+          .collection('users')
+          .doc(currentUser.uid);
       final Map<String, dynamic> updateData = {};
       if (name != null) updateData['name'] = name;
-      if (photoURL != null) updateData['photoUrl'] = photoURL; // Make sure this matches your Firestore field name
+      if (photoURL != null) updateData['photoUrl'] = photoURL;
 
       if (updateData.isNotEmpty) {
         await userRef.update(updateData);

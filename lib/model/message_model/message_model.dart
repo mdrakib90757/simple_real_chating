@@ -7,6 +7,7 @@ class Message {
   final bool? isRead;
   final RepliedMessageInfo? repliedTo;
   final String? fileName;
+  final String? publicId;
 
   Message({
     required this.sender,
@@ -17,6 +18,7 @@ class Message {
     this.repliedTo,
     this.isRead,
     this.fileName,
+    this.publicId,
   });
 
   factory Message.fromMap(Map<String, dynamic> data, String currentUserEmail) {
@@ -28,6 +30,7 @@ class Message {
       isRead: data['isRead'] ?? false,
       isMe: data['sender']?.toString() == currentUserEmail,
       fileName: data['fileName'],
+      publicId: data['publicId'],
     );
   }
 }

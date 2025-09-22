@@ -1,4 +1,3 @@
-
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -46,7 +45,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     );
 
     if (downloadURL != null) {
-      // Correctly call updateUserProfile with the obtained Cloudinary URL
       final bool success = await _profileService.updateUserProfile(
         photoURL: downloadURL,
       );
@@ -63,9 +61,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         );
       }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Image upload failed.")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Image upload failed.")));
     }
 
     setState(() {
@@ -97,8 +95,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             CircleAvatar(
               backgroundColor: AppColor.primaryColor,
               radius: 60,
-              backgroundImage:
-              _imageFile != null ? FileImage(_imageFile!) : null,
+              backgroundImage: _imageFile != null
+                  ? FileImage(_imageFile!)
+                  : null,
               child: _imageFile == null
                   ? const Icon(Icons.person, size: 60, color: Colors.white)
                   : null,
@@ -124,10 +123,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             else
               ElevatedButton.icon(
                 onPressed: _imageFile != null ? _uploadAndSaveProfile : null,
-                icon: const Icon(Icons.save, color: Colors.white), // Added color for consistency
-                label: const Text("Save Profile Picture", style: TextStyle(color: Colors.white)), // Added color
+                icon: const Icon(Icons.save, color: Colors.white),
+                label: const Text(
+                  "Save Profile Picture",
+                  style: TextStyle(color: Colors.white),
+                ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColor.primaryColor, // Added color
+                  backgroundColor: AppColor.primaryColor,
                 ),
               ),
           ],

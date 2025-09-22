@@ -5,9 +5,8 @@ import 'package:web_socket_app/utils/color.dart';
 class DisplayPictureScreen extends StatefulWidget {
   final String imagePath;
   final Function(String)? onSend;
-
   const DisplayPictureScreen({Key? key, required this.imagePath, this.onSend})
-      : super(key: key);
+    : super(key: key);
 
   @override
   State<DisplayPictureScreen> createState() => _DisplayPictureScreenState();
@@ -34,38 +33,21 @@ class _DisplayPictureScreenState extends State<DisplayPictureScreen> {
       ),
       body: Column(
         children: [
-          // Image.file(File(widget.imagePath)),
-          // SizedBox(height: 15),
-          // CircleAvatar(
-          //   radius: 25,
-          //   backgroundColor: AppColor.primaryColor,
-          //   child: IconButton(
-          //     onPressed: () async {
-          //       if (widget.onSend != null) {
-          //         await widget.onSend!(widget.imagePath);
-          //       }
-          //      // Navigator.pop(context);
-          //     },
-          //     icon: Icon(Icons.send, color: Colors.white),
-          //   ),
-          // ),
           Expanded(
-            // Use Expanded to allow the image to fill available space
             child: Center(
               child: isNetwork
                   ? Image.network(
                       widget.imagePath,
-                      fit: BoxFit.contain, // Contain within bounds, not crop
+                      fit: BoxFit.contain,
                       loadingBuilder: (context, child, loadingProgress) {
                         if (loadingProgress == null) return child;
                         return Center(
                           child: CircularProgressIndicator(
                             value: loadingProgress.expectedTotalBytes != null
                                 ? loadingProgress.cumulativeBytesLoaded /
-                                    loadingProgress.expectedTotalBytes!
+                                      loadingProgress.expectedTotalBytes!
                                 : null,
-                            color: Colors
-                                .white, // White progress for dark background
+                            color: Colors.white,
                           ),
                         );
                       },
@@ -77,15 +59,10 @@ class _DisplayPictureScreenState extends State<DisplayPictureScreen> {
                         );
                       },
                     )
-                  : Image.file(
-                      // Use Image.file for local paths
-                      File(widget.imagePath),
-                      fit: BoxFit.contain,
-                    ),
+                  : Image.file(File(widget.imagePath), fit: BoxFit.contain),
             ),
           ),
-          if (widget.onSend !=
-              null) // Only show send button if onSend callback is provided
+          if (widget.onSend != null)
             Padding(
               padding: const EdgeInsets.symmetric(
                 vertical: 20.0,
@@ -97,7 +74,6 @@ class _DisplayPictureScreenState extends State<DisplayPictureScreen> {
                   onPressed: () async {
                     if (widget.onSend != null) {
                       await widget.onSend!(widget.imagePath);
-                      // Navigator.pop(context); // Pop after sending
                     }
                   },
                   icon: Icon(Icons.send, color: Colors.white),

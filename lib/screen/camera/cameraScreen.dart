@@ -58,22 +58,25 @@ class _CameraScreenState extends State<CameraScreen> {
       enableAudio: true,
     );
 
-    _initializeControllerFuture = _controller!.initialize().then((_) async {
-      await _controller!.setFlashMode(
-        _isFlashOn ? FlashMode.torch : FlashMode.off,
-      );
-      return null;
-    }).catchError((error) {
-      print(': $error');
-      _controller = null;
-      _initializeControllerFuture = null;
-      if (mounted) {
-        setState(() {});
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Camera initialization error')),
-        );
-      }
-    });
+    _initializeControllerFuture = _controller!
+        .initialize()
+        .then((_) async {
+          await _controller!.setFlashMode(
+            _isFlashOn ? FlashMode.torch : FlashMode.off,
+          );
+          return null;
+        })
+        .catchError((error) {
+          print(': $error');
+          _controller = null;
+          _initializeControllerFuture = null;
+          if (mounted) {
+            setState(() {});
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Camera initialization error')),
+            );
+          }
+        });
 
     if (mounted) setState(() {});
   }
@@ -98,7 +101,6 @@ class _CameraScreenState extends State<CameraScreen> {
 
       XFile picture = await _controller!.takePicture();
       await picture.saveTo(path);
-      //  Navigator.pop(context, path);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Photo taken: $path')));
@@ -110,7 +112,6 @@ class _CameraScreenState extends State<CameraScreen> {
           builder: (_) => DisplayPictureScreen(
             imagePath: path,
             onSend: (imagePath) {
-              // Pop DisplayPictureScreen and return imagePath to CameraScreen
               Navigator.pop(context, imagePath);
             },
           ),

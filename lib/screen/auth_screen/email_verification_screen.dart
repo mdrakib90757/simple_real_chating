@@ -198,7 +198,6 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
               TextButton(
                 onPressed: () async {
                   await _auth.signOut();
-
                   Navigator.of(
                     context,
                   ).pushNamedAndRemoveUntil('/', (route) => false);

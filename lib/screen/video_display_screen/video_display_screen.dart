@@ -9,7 +9,7 @@ class DisplayVideoScreen extends StatefulWidget {
   final String videoPath;
   final Function(String)? onSend;
   const DisplayVideoScreen({Key? key, required this.videoPath, this.onSend})
-      : super(key: key);
+    : super(key: key);
 
   @override
   _DisplayVideoScreenState createState() => _DisplayVideoScreenState();
