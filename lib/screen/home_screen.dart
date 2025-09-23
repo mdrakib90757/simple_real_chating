@@ -7,6 +7,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:web_socket_app/screen/profileEditScreen/profileEditScreen.dart';
 import 'package:web_socket_app/utils/color.dart';
+import '../widgets/custom_search_delegate/custom_search_delegate.dart';
+import 'auth_screen/signIn_screen.dart';
 import 'chat_screen.dart';
 
 enum MenuOption { onlineUsers, settings, profile }
@@ -21,6 +23,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final FirebaseDatabase _firebaseDatabase = FirebaseDatabase.instance;
   final User currentUser = FirebaseAuth.instance.currentUser!;
   String? _currentToken;
+  List<Map<String, dynamic>> _chatListData = [];
 
   @override
   void initState() {
@@ -114,37 +117,58 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             icon: Icon(Icons.menu, color: Colors.white),
           ),
         ),
-        title: Column(
+        title: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
+            // Text(
+            //   currentUser.email ?? "No Email",
+            //   style: TextStyle(fontSize: 15, color: Colors.white),
+            // ),
             Text(
-              currentUser.email ?? "No Email",
-              style: TextStyle(fontSize: 15, color: Colors.white),
+              'CHATTER',
+              style: TextStyle(
+                fontSize: 25,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
             ),
-            Text("Online", style: TextStyle(fontSize: 10, color: Colors.white)),
           ],
         ),
       ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text(
-              "Active Now",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+      body: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ReusableSearchWidget(
+            //   hintText: "Search chats",
+            //   items: _chatListData,
+            //   itemToString: (item) => item['email'],
+            //   onItemSelected: (item) {
+            //     Navigator.push(
+            //       context,
+            //       MaterialPageRoute(
+            //         builder: (_) => ChatScreen(
+            //           receiverEmail: item['email'],
+            //           receiverID: item['id'],
+            //           currentUserId: currentUser.uid,
+            //           receiverUserId: item['id'],
+            //         ),
+            //       ),
+            //     );
+            //   },
+            // ),
+            _buildOnlineUsersList(),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Text(
+                "Chats",
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
             ),
-          ),
-          _buildOnlineUsersList(),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text(
-              "Chats",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-          ),
-          buildChatList(),
-        ],
+            buildChatList(),
+          ],
+        ),
       ),
       drawer: Drawer(
         child: ListView(
@@ -216,7 +240,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   await FirebaseAuth.instance.signOut();
 
                   if (mounted) {
-                    Navigator.pushReplacementNamed(context, '/');
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (context) => LoginScreen()),
+                      (Route<dynamic> route) => false,
+                    );
                   }
                 } catch (e) {
                   print("Error during logout: $e");
@@ -231,25 +258,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  //active user list
   Widget _buildOnlineUsersList() {
     return SizedBox(
-      height: 100,
+      height: 125,
       child: StreamBuilder(
         stream: _firebaseDatabase.ref('presence').onValue,
         builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            );
-          }
           if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
             return Center(child: Text("No users online"));
           }
+
           final data = Map<String, dynamic>.from(
             snapshot.data!.snapshot.value as Map,
           );
@@ -259,67 +277,67 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               onlineUsersUids.add(key);
             }
           });
-          if (onlineUsersUids.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Text(
-                  "No other users are currently online.",
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ),
-            );
-          }
-          // Now, fetch user details (including photoURL) from Firestore for these UIDs
+
           return StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('users')
-                .where(FieldPath.documentId, whereIn: onlineUsersUids)
-                .snapshots(),
+            stream: FirebaseFirestore.instance.collection('users').snapshots(),
             builder: (context, userSnapshot) {
-              if (userSnapshot.connectionState == ConnectionState.waiting) {
-                return Center(
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                );
-              }
-
               if (!userSnapshot.hasData || userSnapshot.data!.docs.isEmpty) {
-                return Center(child: Text("No user data available."));
+                return Center(child: Text("No user data"));
               }
 
-              final onlineUsersWithData = userSnapshot.data!.docs.map((doc) {
+              final allUsers = userSnapshot.data!.docs.map((doc) {
                 final userData = doc.data() as Map<String, dynamic>;
                 return {
                   'uid': doc.id,
                   'email': userData['email'] ?? 'No Email',
-                  'photoUrl':
-                      userData['photoUrl'], // Get photoUrl from Firestore
+                  'photoUrl': userData['photoUrl'] ?? '',
                 };
               }).toList();
 
+              // Logged-in user first
+              final currentUserData = allUsers.firstWhere(
+                (u) => u['uid'] == currentUser.uid,
+                orElse: () => {
+                  'uid': currentUser.uid,
+                  'email': currentUser.email ?? "User",
+                  'photoUrl': currentUser.photoURL ?? '',
+                },
+              );
+
+              final onlineUsers = allUsers
+                  .where((u) => onlineUsersUids.contains(u['uid']))
+                  .toList();
+
+              final usersList = [currentUserData, ...onlineUsers];
+
               return ListView.builder(
                 scrollDirection: Axis.horizontal,
-                itemCount: onlineUsersWithData.length,
+                itemCount: usersList.length,
+                //  padding: EdgeInsets.symmetric(horizontal: 5, vertical: 8),
                 itemBuilder: (context, index) {
-                  final user = onlineUsersWithData[index];
-                  final email = user['email'];
+                  final user = usersList[index];
                   final uid = user['uid'];
+                  final email = user['email'];
                   final photoUrl = user['photoUrl'];
+                  final bool isCurrentUser = uid == currentUser.uid;
 
                   return GestureDetector(
                     onTap: () async {
-                      // Firestore check before navigating
-                      final userDoc = await FirebaseFirestore.instance
+                      if (isCurrentUser) {
+                        // Navigator.push(
+                        //   context,
+                        //   MaterialPageRoute(
+                        //     builder: (context) => const ProfileEditScreen(),
+                        //   ),
+                        // );
+                        return;
+                      }
+
+                      final receiverUserDoc = await FirebaseFirestore.instance
                           .collection('users')
                           .doc(uid)
                           .get();
-
-                      if (!userDoc.exists) {
-                        // Optionally create user in Firestore
+                      if (!receiverUserDoc.exists) {
                         await FirebaseFirestore.instance
                             .collection('users')
                             .doc(uid)
@@ -327,13 +345,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               'email': email,
                               'fcmTokens': [],
                               'createdAt': FieldValue.serverTimestamp(),
-                              'photoUrl': null,
-                            });
-                        print("Receiver user created in Firestore: $uid");
+                              'photoUrl':
+                                  photoUrl, // Use the photoUrl we already have
+                            }, SetOptions(merge: true));
+                        print("Receiver user entry ensured in Firestore: $uid");
                       }
+
+                      // Prepare participant info for the chat room
                       final String? currentUserPhotoUrl =
                           FirebaseAuth.instance.currentUser!.photoURL;
                       final String? receiverPhotoUrl = photoUrl;
+
                       final Map<String, dynamic> participantInfo = {
                         currentUser.uid: {
                           'email': currentUser.email,
@@ -342,11 +364,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         uid: {'email': email, 'photoUrl': receiverPhotoUrl},
                       };
 
+                      // Update chat room with participant info (important for chat list display)
                       await _updateChatRoomParticipantInfo(
                         currentUserId: currentUser.uid,
                         receiverId: uid,
                         participantInfo: participantInfo,
                       );
+
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -362,34 +386,64 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     child: Container(
                       width: 80,
                       margin: const EdgeInsets.symmetric(
-                        horizontal: 8,
+                        horizontal: 10,
                         vertical: 10,
                       ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          CircleAvatar(
-                            radius: 25,
-                            backgroundColor: AppColor.primaryColor,
-                            backgroundImage:
-                                (photoUrl != null && photoUrl.isNotEmpty)
-                                ? NetworkImage(
-                                    photoUrl,
-                                  ) // Use photoUrl for online user
-                                : null,
-                            child: (photoUrl == null || photoUrl.isEmpty)
-                                ? Icon(
-                                    Icons.person,
-                                    size: 25,
-                                    color: Colors.white,
-                                  ) // Smaller icon for consistency
-                                : null,
+                          Stack(
+                            children: [
+                              Container(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                                child: CircleAvatar(
+                                  radius: isCurrentUser ? 35 : 30,
+                                  backgroundColor: AppColor.primaryColor,
+
+                                  backgroundImage:
+                                      (photoUrl != null && photoUrl.isNotEmpty)
+                                      ? NetworkImage(photoUrl)
+                                      : null,
+                                  child: (photoUrl == null || photoUrl.isEmpty)
+                                      ? Icon(
+                                          Icons.person,
+                                          size: isCurrentUser ? 35 : 25,
+                                          color: Colors.white,
+                                        )
+                                      : null,
+                                ),
+                              ),
+                              if (!isCurrentUser) // green dot for online users only
+                                Positioned(
+                                  bottom: 0,
+                                  right: 0,
+                                  child: Container(
+                                    width: 12,
+                                    height: 12,
+                                    decoration: BoxDecoration(
+                                      color: Colors.green,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 2,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                           SizedBox(height: 5),
                           Text(
                             email.split('@')[0],
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 15),
+                            style: TextStyle(
+                              fontSize: 12,
+                            ), // Consistent font size
                           ),
                         ],
                       ),
@@ -404,6 +458,152 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  // Widget buildChatList() {
+  //   final String currentUserId = currentUser.uid;
+  //   return StreamBuilder<QuerySnapshot>(
+  //     stream: FirebaseFirestore.instance
+  //         .collection('chat_rooms')
+  //         .where('participants', arrayContains: currentUserId)
+  //         .orderBy('last_message_timestamp', descending: true)
+  //         .snapshots(),
+  //     builder: (context, snapshot) {
+  //       if (!snapshot.hasData) {
+  //         return Center(child: CircularProgressIndicator());
+  //       }
+  //
+  //       final chatDocs = snapshot.data!.docs;
+  //
+  //
+  //       _chatListData = chatDocs.map((doc) {
+  //         final data = doc.data() as Map<String, dynamic>;
+  //         final participants = List<String>.from(data['participants']);
+  //         final otherUserId = participants.firstWhere((id) => id != currentUserId);
+  //         final otherUserInfo = data['participant_info'][otherUserId];
+  //         return {
+  //           'id': otherUserId,
+  //           'email': otherUserInfo['email'],
+  //           'photoUrl': otherUserInfo['photoUrl'],
+  //         };
+  //       }).toList();
+  //
+  //
+  //       if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+  //         return Center(
+  //           child: Column(
+  //             mainAxisAlignment: MainAxisAlignment.center,
+  //             children: [
+  //               Icon(
+  //                 Icons.chat_bubble_outline,
+  //                 size: 80,
+  //                 color: Colors.grey[200],
+  //               ),
+  //               const SizedBox(height: 16),
+  //               Text(
+  //                 "Welcome to the Chat App!",
+  //                 style: TextStyle(fontSize: 18, color: Colors.grey[700]),
+  //               ),
+  //               const SizedBox(height: 8),
+  //               Text(
+  //                 "Start a conversation with an active user.",
+  //                 style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+  //               ),
+  //             ],
+  //           ),
+  //         );
+  //       }
+  //       //final chatDocs = snapshot.data!.docs;
+  //       return ListView.builder(
+  //         shrinkWrap: true,
+  //         physics: NeverScrollableScrollPhysics(),
+  //         itemCount: chatDocs.length,
+  //         itemBuilder: (context, index) {
+  //           final chatData = chatDocs[index].data() as Map<String, dynamic>;
+  //
+  //           final List<String> participants = List.from(
+  //             chatData['participants'],
+  //           );
+  //           final String otherUserId = participants.firstWhere(
+  //             (id) => id != currentUserId,
+  //             orElse: () => '',
+  //           );
+  //
+  //           if (otherUserId.isEmpty) return const SizedBox.shrink();
+  //
+  //           final Map<String, dynamic> otherUserInfo =
+  //               chatData['participant_info'][otherUserId];
+  //           final String otherUserEmail =
+  //               (otherUserInfo['email'] ?? '').isNotEmpty
+  //               ? otherUserInfo['email']
+  //               : 'Unknown User';
+  //           final String? otherUserPhotoUrl = otherUserInfo['photoUrl'];
+  //
+  //           final Timestamp lastMessageTimestamp =
+  //               chatData['last_message_timestamp'];
+  //           final DateTime lastMessageTime = lastMessageTimestamp.toDate();
+  //           final String formattedTime =
+  //               "${lastMessageTime.hour}:${lastMessageTime.minute.toString().padLeft(2, '0')}";
+  //
+  //           return ListTile(
+  //             contentPadding: const EdgeInsets.symmetric(
+  //               horizontal: 16.0,
+  //               vertical: 8.0,
+  //             ),
+  //             leading: Container(
+  //               decoration: BoxDecoration(
+  //                 shape: BoxShape.circle,
+  //                 border: Border.all(color: Colors.grey.shade600)
+  //               ),
+  //               child: CircleAvatar(
+  //                 radius: 25,
+  //                 backgroundColor: AppColor.primaryColor,
+  //                 backgroundImage:
+  //                     (otherUserPhotoUrl != null && otherUserPhotoUrl.isNotEmpty)
+  //                     ? NetworkImage(
+  //                         otherUserPhotoUrl,
+  //                       ) // Use otherUserPhotoUrl here!
+  //                     : null,
+  //                 child: (otherUserPhotoUrl == null || otherUserPhotoUrl.isEmpty)
+  //                     ? Icon(
+  //                         Icons.person,
+  //                         size: 25,
+  //                         color: Colors.white,
+  //                       ) // Smaller icon for consistency
+  //                     : null,
+  //               ),
+  //             ),
+  //             title: Text(
+  //               otherUserEmail.split('@')[0],
+  //               style: const TextStyle(fontWeight: FontWeight.bold),
+  //             ),
+  //             subtitle: Text(
+  //               chatData['last_message'] ?? '',
+  //               maxLines: 1,
+  //               overflow: TextOverflow.ellipsis,
+  //             ),
+  //             trailing: Text(
+  //               formattedTime,
+  //               style: const TextStyle(fontSize: 12, color: Colors.grey),
+  //             ),
+  //             onTap: () {
+  //               Navigator.push(
+  //                 context,
+  //                 MaterialPageRoute(
+  //                   builder: (_) => ChatScreen(
+  //                     receiverEmail: otherUserEmail,
+  //                     receiverID: otherUserId,
+  //                     currentUserId: currentUserId,
+  //                     receiverUserId: otherUserId,
+  //                   ),
+  //                 ),
+  //               );
+  //             },
+  //           );
+  //         },
+  //       );
+  //     },
+  //   );
+  // }
+
   Widget buildChatList() {
     final String currentUserId = currentUser.uid;
 
@@ -413,82 +613,101 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           .where('participants', arrayContains: currentUserId)
           .orderBy('last_message_timestamp', descending: true)
           .snapshots(),
-      builder: (context, AsyncSnapshot<QuerySnapshot> snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Expanded(
-            child: Center(
-              child: CircularProgressIndicator(
-                color: AppColor.primaryColor,
-                strokeWidth: 2,
-              ),
-            ),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return Center(
+            // <--- No Expanded here
+            child: CircularProgressIndicator(color: AppColor.primaryColor),
           );
         }
 
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return Expanded(
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.chat_bubble_outline,
-                    size: 80,
-                    color: Colors.grey[200],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    "Welcome to the Chat App!",
-                    style: TextStyle(fontSize: 18, color: Colors.grey[700]),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    "Start a conversation with an active user.",
-                    style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
         final chatDocs = snapshot.data!.docs;
-        return Expanded(
-          child: ListView.builder(
-            //padding: const EdgeInsets.only(top: 8.0),
-            itemCount: chatDocs.length,
-            itemBuilder: (context, index) {
-              final chatData = chatDocs[index].data() as Map<String, dynamic>;
 
-              final List<String> participants = List.from(
-                chatData['participants'],
-              );
-              final String otherUserId = participants.firstWhere(
-                (id) => id != currentUserId,
-                orElse: () => '',
-              );
+        _chatListData = chatDocs.map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final participants = List<String>.from(data['participants']);
+          final otherUserId = participants.firstWhere(
+            (id) => id != currentUserId,
+            orElse: () => '',
+          ); // Handle if current user is only participant
+          final otherUserInfo =
+              data['participant_info'][otherUserId] ??
+              {}; // Handle null otherUserInfo
+          return {
+            'id': otherUserId,
+            'email': otherUserInfo['email'] ?? 'Unknown',
+            'photoUrl': otherUserInfo['photoUrl'] ?? '',
+          };
+        }).toList();
 
-              if (otherUserId.isEmpty) return const SizedBox.shrink();
-
-              final Map<String, dynamic> otherUserInfo =
-                  chatData['participant_info'][otherUserId];
-              final String otherUserEmail =
-                  (otherUserInfo['email'] ?? '').isNotEmpty
-                  ? otherUserInfo['email']
-                  : 'Unknown User';
-              final String? otherUserPhotoUrl = otherUserInfo['photoUrl'];
-
-              final Timestamp lastMessageTimestamp =
-                  chatData['last_message_timestamp'];
-              final DateTime lastMessageTime = lastMessageTimestamp.toDate();
-              final String formattedTime =
-                  "${lastMessageTime.hour}:${lastMessageTime.minute.toString().padLeft(2, '0')}";
-
-              return ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16.0,
-                  vertical: 8.0,
+        if (chatDocs.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.chat_bubble_outline,
+                  size: 80,
+                  color: Colors.grey[200],
                 ),
-                leading: CircleAvatar(
+                const SizedBox(height: 16),
+                Text(
+                  "Welcome to the Chat App!",
+                  style: TextStyle(fontSize: 18, color: Colors.grey[700]),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "Start a conversation with an active user.",
+                  style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          shrinkWrap: true,
+          physics: NeverScrollableScrollPhysics(),
+          itemCount: chatDocs.length,
+          itemBuilder: (context, index) {
+            final chatData = chatDocs[index].data() as Map<String, dynamic>;
+
+            final List<String> participants = List.from(
+              chatData['participants'],
+            );
+            final String otherUserId = participants.firstWhere(
+              (id) => id != currentUserId,
+              orElse: () => '',
+            );
+
+            if (otherUserId.isEmpty) return const SizedBox.shrink();
+
+            final Map<String, dynamic> otherUserInfo =
+                chatData['participant_info'][otherUserId] ??
+                {}; // Added null check
+            final String otherUserEmail =
+                (otherUserInfo['email'] ?? '').isNotEmpty
+                ? otherUserInfo['email']
+                : 'Unknown User';
+            final String? otherUserPhotoUrl = otherUserInfo['photoUrl'];
+
+            final Timestamp lastMessageTimestamp =
+                chatData['last_message_timestamp'];
+            final DateTime lastMessageTime = lastMessageTimestamp.toDate();
+            final String formattedTime =
+                "${lastMessageTime.hour}:${lastMessageTime.minute.toString().padLeft(2, '0')}";
+
+            return ListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 8.0,
+              ),
+              leading: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.grey.shade600),
+                ),
+                child: CircleAvatar(
                   radius: 25,
                   backgroundColor: AppColor.primaryColor,
                   backgroundImage:
@@ -507,35 +726,35 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ) // Smaller icon for consistency
                       : null,
                 ),
-                title: Text(
-                  otherUserEmail.split('@')[0],
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                subtitle: Text(
-                  chatData['last_message'] ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                trailing: Text(
-                  formattedTime,
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ChatScreen(
-                        receiverEmail: otherUserEmail,
-                        receiverID: otherUserId,
-                        currentUserId: currentUserId,
-                        receiverUserId: otherUserId,
-                      ),
+              ),
+              title: Text(
+                otherUserEmail.split('@')[0],
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text(
+                chatData['last_message'] ?? '',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: Text(
+                formattedTime,
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ChatScreen(
+                      receiverEmail: otherUserEmail,
+                      receiverID: otherUserId,
+                      currentUserId: currentUserId,
+                      receiverUserId: otherUserId,
                     ),
-                  );
-                },
-              );
-            },
-          ),
+                  ),
+                );
+              },
+            );
+          },
         );
       },
     );

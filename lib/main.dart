@@ -12,6 +12,8 @@ import 'package:flutter/scheduler.dart' hide Priority;
 import 'package:web_socket_app/screen/home_screen.dart';
 import 'package:web_socket_app/screen/video_call_screen/video_call_screen.dart';
 
+import 'screen/incoming_call_screen/incoming_call_screen.dart';
+
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   print("Background Message: ${message.messageId}");
@@ -154,7 +156,9 @@ void _handleNavigation(Map<String, dynamic> data) {
   final senderEmail = data['senderEmail'];
   final senderID = data['senderID'];
   final String? callType = data['callType']; // Added for call handling
-  final String? channelName = data['channelName']; // Added for call handling
+  final String? channelName = data['channelName'];
+  final String? notificationType =
+      data['notificationType']; // Added for call handling
 
   print("--- _handleNavigation Called ---");
   print("Sender ID: $senderID, Current Open Chat: $currentChatUserId");
@@ -172,8 +176,7 @@ void _handleNavigation(Map<String, dynamic> data) {
       return;
     }
 
-    // --- Handle Call Notifications ---
-    if (callType != null && channelName != null) {
+    if (notificationType == 'call' && callType != null && channelName != null) {
       // If already in a call on this channel, don't navigate again
       if (currentCallChannel == channelName) {
         print("Already on call channel $channelName. Skipping navigation.");
@@ -183,56 +186,103 @@ void _handleNavigation(Map<String, dynamic> data) {
       // Set currentCallChannel to prevent duplicate navigation
       currentCallChannel = channelName;
 
-      // calling Push notification to call screen
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (navigatorKey.currentState != null) {
-          print("Navigator state is valid. Pushing VideoCallPage...");
+      // Use a Future.delayed to ensure Navigator is ready, especially from terminated state
+      // Use a Future.delayed to ensure Navigator is ready, especially from terminated state
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (navigatorKey.currentState != null &&
+            navigatorKey.currentState!.mounted) {
+          print("Navigator state is valid. Pushing IncomingCallScreen...");
+          // Push your dedicated incoming call screen here
           navigatorKey.currentState!
               .push(
                 MaterialPageRoute(
-                  builder: (_) => VideoCallPage(
+                  builder: (_) => IncomingCallScreen(
                     channelName: channelName,
                     isVideoCall: callType == "Video",
+                    callerId: senderID,
+                    callerEmail: senderEmail,
+                    onAccept: () {
+                      // When accepted, navigate to VideoCallPage (or AudioCallPage)
+                      Navigator.pop(
+                        navigatorKey.currentState!.context,
+                      ); // Pop IncomingCallScreen
+                      navigatorKey.currentState!
+                          .push(
+                            MaterialPageRoute(
+                              builder: (_) => VideoCallPage(
+                                // Use VideoCallPage for both audio/video, it handles disabling video
+                                channelName: channelName,
+                                isVideoCall: callType == "Video",
+                                receiverEmail: senderEmail,
+                                // receiverPhotoUrl: getCallerPhoto(senderID), // You might fetch this
+                              ),
+                            ),
+                          )
+                          .then((_) {
+                            currentCallChannel =
+                                null; // Reset when call page is popped
+                          });
+                    },
+                    onDecline: () {
+                      // Handle decline logic (e.g., send decline signal to caller)
+                      print("Call declined by user.");
+                      Navigator.pop(
+                        navigatorKey.currentState!.context,
+                      ); // Pop IncomingCallScreen
+                      currentCallChannel =
+                          null; // Reset when call page is popped
+                    },
                   ),
                 ),
               )
               .then((_) {
-                // Reset currentCallChannel when the call page is popped
-                currentCallChannel = null;
+                // This .then() fires when IncomingCallScreen is popped (either accepted or declined)
+                if (currentCallChannel != null) {
+                  // Only reset if not already handled by onAccept
+                  currentCallChannel = null;
+                }
               });
         } else {
           print("Navigator not ready for call, scheduling again...");
           SchedulerBinding.instance.addPostFrameCallback((_) {
-            // Use SchedulerBinding to wait for next frame
-            _handleNavigation(data);
+            _handleNavigation(data); // Re-attempt after next frame
           });
         }
       });
-      return;
+      return; // Important: prevent falling through to chat navigation
     }
 
-    // auto navigate push notification
-    Future.delayed(const Duration(milliseconds: 500), () {
-      try {
-        if (navigatorKey.currentState != null) {
-          print("Navigator state is valid. Pushing ChatScreen...");
-          navigatorKey.currentState!.push(
-            MaterialPageRoute(
-              builder: (_) => ChatScreen(
-                receiverEmail: senderEmail,
-                receiverID: senderID,
-                currentUserId: FirebaseAuth.instance.currentUser!.uid,
-                receiverUserId: senderID,
-              ),
-            ),
-          );
-        } else {
-          print("Navigator not ready yet, scheduling again...");
-          _handleNavigation(data);
-        }
-      } catch (e) {
-        print("Navigation error Error ${e}");
+    // --- Handle Chat Notifications ---
+    if (notificationType != 'call' && senderEmail != null) {
+      // Only navigate to chat if not a call
+      // Prevent duplicate navigation if already in this chat
+      if (currentChatUserId == senderID) {
+        print("Already on chat screen with $senderID. Skipping navigation.");
+        return;
       }
-    });
+
+      Future.delayed(const Duration(milliseconds: 500), () {
+        try {
+          if (navigatorKey.currentState != null) {
+            print("Navigator state is valid. Pushing ChatScreen...");
+            navigatorKey.currentState!.push(
+              MaterialPageRoute(
+                builder: (_) => ChatScreen(
+                  receiverEmail: senderEmail,
+                  receiverID: senderID,
+                  currentUserId: FirebaseAuth.instance.currentUser!.uid,
+                  receiverUserId: senderID,
+                ),
+              ),
+            );
+          } else {
+            print("Navigator not ready yet, scheduling again...");
+            _handleNavigation(data);
+          }
+        } catch (e) {
+          print("Navigation error Error ${e}");
+        }
+      });
+    }
   }
 }

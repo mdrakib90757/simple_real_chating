@@ -731,6 +731,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
             ),
+            // audio call
             GestureDetector(
               onTap: () async {
                 String channel =
@@ -745,7 +746,11 @@ class _ChatScreenState extends State<ChatScreen> {
                     builder: (_) => VideoCallPage(
                       channelName: channel,
                       isVideoCall: false,
-                    ), // isVideoCall: false for audio
+                      receiverEmail:
+                          widget.receiverEmail, // Pass receiver email
+                      receiverPhotoUrl:
+                          _receiverPhotoUrl, // Pass receiver photo URL
+                    ),
                   ),
                 );
               },
@@ -759,14 +764,18 @@ class _ChatScreenState extends State<ChatScreen> {
                 await sendCallInvitation(
                   channelName: channel,
                   callType: "Video",
-                ); // Send FCM invitation
+                );
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (_) => VideoCallPage(
                       channelName: channel,
                       isVideoCall: true,
-                    ), // isVideoCall: true for video
+                      receiverEmail:
+                          widget.receiverEmail, // Pass receiver email
+                      receiverPhotoUrl:
+                          _receiverPhotoUrl, // Pass receiver photo URL
+                    ),
                   ),
                 );
               },

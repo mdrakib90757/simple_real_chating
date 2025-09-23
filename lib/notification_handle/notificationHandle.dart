@@ -5,6 +5,7 @@ import 'package:googleapis_auth/auth_io.dart';
 
 class NotificationHandler {
   final BuildContext context;
+
   NotificationHandler(this.context);
 
   // Load JSON from asset
@@ -91,7 +92,6 @@ class NotificationHandler {
     }
   }
 
-  // NEW METHOD FOR CALL NOTIFICATIONS
   Future<void> sendCallNotification({
     required String fcmToken,
     required String title,
@@ -106,28 +106,25 @@ class NotificationHandler {
         'token': fcmToken,
         'notification': {'title': title, 'body': body},
         'data': {
-          'click_action': 'FLUTTER_NOTIFICATION_CLICK',
+          'click_action': 'FLUTTER_NOTIFICATION_CLICK', // Ensure this is set
           'senderID': senderId,
           'senderEmail': senderEmail,
           'channelName': channelName,
           'callType': callType, // This is key for differentiation
+          'notificationType': 'call', // Add a type to differentiate from chat
         },
         'android': {
           'priority': 'high',
           'notification': {
             'channel_id': 'high_importance_channel',
             'sound':
-                'incoming_call.wav', // You might want a custom sound for calls
-            'tag':
-                'call_${channelName}', // Helps to group or replace notifications
+                'sound.mp3', // Make sure this path is correct relative to raw/
+            'tag': 'call_${channelName}',
           },
         },
         'apns': {
-          // For iOS notifications
-          'headers': {
-            'apns-priority': '10',
-            'apns-push-type': 'alert', // or 'background' for silent
-          },
+          // For iOS notifications - you'd likely need CallKit for full screen
+          'headers': {'apns-priority': '10', 'apns-push-type': 'alert'},
           'payload': {
             'aps': {
               'alert': {'title': title, 'body': body},
@@ -137,6 +134,7 @@ class NotificationHandler {
             'senderEmail': senderEmail,
             'channelName': channelName,
             'callType': callType,
+            'notificationType': 'call',
           },
         },
       },
@@ -147,8 +145,10 @@ class NotificationHandler {
     print(encodedPayload);
 
     try {
+      // IMPORTANT: Implement _getAccessToken securely. This placeholder is for development only.
       final accessToken = await _getAccessToken();
-      final projectId = "real-time-messaging-9b660";
+      final projectId =
+          "real-time-messaging-9b660"; // Replace with your project ID
       final url = Uri.parse(
         'https://fcm.googleapis.com/v1/projects/$projectId/messages:send',
       );
