@@ -90,4 +90,88 @@ class NotificationHandler {
       print("Error sending notification: $e");
     }
   }
+
+  // NEW METHOD FOR CALL NOTIFICATIONS
+  Future<void> sendCallNotification({
+    required String fcmToken,
+    required String title,
+    required String body,
+    required String senderId,
+    required String senderEmail,
+    required String channelName,
+    required String callType, // "Audio" or "Video"
+  }) async {
+    final Map<String, dynamic> payload = {
+      'message': {
+        'token': fcmToken,
+        'notification': {'title': title, 'body': body},
+        'data': {
+          'click_action': 'FLUTTER_NOTIFICATION_CLICK',
+          'senderID': senderId,
+          'senderEmail': senderEmail,
+          'channelName': channelName,
+          'callType': callType, // This is key for differentiation
+        },
+        'android': {
+          'priority': 'high',
+          'notification': {
+            'channel_id': 'high_importance_channel',
+            'sound':
+                'incoming_call.wav', // You might want a custom sound for calls
+            'tag':
+                'call_${channelName}', // Helps to group or replace notifications
+          },
+        },
+        'apns': {
+          // For iOS notifications
+          'headers': {
+            'apns-priority': '10',
+            'apns-push-type': 'alert', // or 'background' for silent
+          },
+          'payload': {
+            'aps': {
+              'alert': {'title': title, 'body': body},
+              'sound': 'incoming_call.wav',
+            },
+            'senderID': senderId,
+            'senderEmail': senderEmail,
+            'channelName': channelName,
+            'callType': callType,
+          },
+        },
+      },
+    };
+
+    final String encodedPayload = jsonEncode(payload);
+    print("Sending FCM V1 Payload (Call)");
+    print(encodedPayload);
+
+    try {
+      final accessToken = await _getAccessToken();
+      final projectId = "real-time-messaging-9b660";
+      final url = Uri.parse(
+        'https://fcm.googleapis.com/v1/projects/$projectId/messages:send',
+      );
+
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $accessToken',
+        },
+        body: encodedPayload,
+      );
+
+      if (response.statusCode == 200) {
+        print("$callType Call Notification sent successfully!");
+      } else {
+        print(
+          "Failed to send $callType call notification. Status code: ${response.statusCode}",
+        );
+        print("FCM Error Body: ${response.body}");
+      }
+    } catch (e) {
+      print("Error sending $callType call notification: $e");
+    }
+  }
 }

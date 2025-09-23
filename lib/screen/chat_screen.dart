@@ -16,6 +16,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:web_socket_app/model/message_model/message_model.dart';
 import 'package:web_socket_app/screen/camera/cameraScreen.dart';
 import 'package:web_socket_app/screen/photo_display_screen/photo_display_screen.dart';
+import 'package:web_socket_app/screen/video_call_screen/video_call_screen.dart';
 import 'package:web_socket_app/screen/video_display_screen/video_display_screen.dart';
 import 'package:web_socket_app/utils/color.dart';
 import '../ChatService/chatService.dart';
@@ -23,6 +24,8 @@ import 'package:web_socket_app/main.dart';
 import 'package:flutter/foundation.dart' as foundation;
 import 'package:crypto/crypto.dart';
 import 'package:crypto/crypto.dart';
+
+import '../notification_handle/notificationHandle.dart';
 
 class ChatScreen extends StatefulWidget {
   final String receiverEmail;
@@ -46,6 +49,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final FirebaseFirestore _firebaseFirestore = FirebaseFirestore.instance;
   final FirebaseStorage _firebaseStorage = FirebaseStorage.instance;
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  NotificationHandler? _notificationHandler;
+
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
   final User currentUser = FirebaseAuth.instance.currentUser!;
@@ -89,6 +94,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     });
     _fetchReceiverPhotoUrl();
+    _notificationHandler = NotificationHandler(context);
   }
 
   @override
@@ -635,6 +641,57 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  String _getTruncatedReceiverEmail(String email) {
+    const String targetString = "mdrakibdeveloper";
+    const int maxDisplayLength = targetString.length;
+    int atIndex = email.indexOf('@');
+
+    if (atIndex != -1 &&
+        email.substring(0, atIndex).length > maxDisplayLength) {
+      return email.substring(0, maxDisplayLength) + '...';
+    } else if (email.length > 20) {
+      return email.substring(0, 17) + '...';
+    }
+    return email;
+  }
+
+  Future<void> sendCallInvitation({
+    required String channelName,
+    required String callType,
+  }) async {
+    DocumentSnapshot receiverDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(widget.receiverID)
+        .get();
+    String? receiverFcmToken = receiverDoc['fcmToken'];
+
+    if (receiverFcmToken == null) {
+      print("Receiver FCM token not found!");
+      // Potentially show a message to the user
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "Cannot call: Receiver is offline or token not available.",
+          ),
+        ),
+      );
+      return;
+    }
+
+    // Use the new method from NotificationHandler
+    await _notificationHandler?.sendCallNotification(
+      fcmToken: receiverFcmToken,
+      title: 'Incoming ${callType} Call',
+      body: 'from ${currentUser.email?.split('@')[0]}',
+      senderId: currentUser.uid,
+      senderEmail: currentUser.email!,
+      channelName: channelName,
+      callType: callType,
+    );
+
+    print("FCM call invitation sent successfully!");
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -664,13 +721,56 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
 
             SizedBox(width: 8),
-            Text(
-              widget.receiverEmail,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                overflow: TextOverflow.ellipsis,
+            Expanded(
+              child: Text(
+                _getTruncatedReceiverEmail(widget.receiverEmail),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
+            ),
+            GestureDetector(
+              onTap: () async {
+                String channel =
+                    "voice_${widget.receiverEmail.replaceAll('.', '_').replaceAll('@', '_')}";
+                await sendCallInvitation(
+                  channelName: channel,
+                  callType: "Audio",
+                );
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => VideoCallPage(
+                      channelName: channel,
+                      isVideoCall: false,
+                    ), // isVideoCall: false for audio
+                  ),
+                );
+              },
+              child: Icon(Icons.call, color: Colors.white),
+            ),
+            SizedBox(width: 20),
+            GestureDetector(
+              onTap: () async {
+                String channel =
+                    "video_${widget.receiverEmail.replaceAll('.', '_').replaceAll('@', '_')}";
+                await sendCallInvitation(
+                  channelName: channel,
+                  callType: "Video",
+                ); // Send FCM invitation
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => VideoCallPage(
+                      channelName: channel,
+                      isVideoCall: true,
+                    ), // isVideoCall: true for video
+                  ),
+                );
+              },
+              child: Icon(Icons.video_call, color: Colors.white),
             ),
           ],
         ),
@@ -1243,8 +1343,7 @@ class _ChatScreenState extends State<ChatScreen> {
               onTap: () {
                 if (_showEmojiPicker) {
                   setState(() {
-                    _showEmojiPicker =
-                        false; // Hide emoji picker when text field is tapped
+                    _showEmojiPicker = false;
                   });
                 }
               },

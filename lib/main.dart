@@ -9,6 +9,8 @@ import 'package:web_socket_app/firebase_options.dart';
 import 'package:web_socket_app/screen/auth_screen/signIn_screen.dart';
 import 'package:web_socket_app/screen/chat_screen.dart';
 import 'package:flutter/scheduler.dart' hide Priority;
+import 'package:web_socket_app/screen/home_screen.dart';
+import 'package:web_socket_app/screen/video_call_screen/video_call_screen.dart';
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
@@ -80,12 +82,24 @@ class MyApp extends StatelessWidget {
       title: 'Flutter Demo',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(),
-      home: LoginScreen(),
+      home: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasData) {
+            return HomeScreen();
+          }
+          return LoginScreen();
+        },
+      ),
     );
   }
 }
 
 String? currentChatUserId;
+String? currentCallChannel;
 
 ///  Foreground message listener setup (call this from HomeScreen initState)
 void setupFirebaseListeners() {
@@ -139,8 +153,12 @@ void setupFirebaseListeners() {
 void _handleNavigation(Map<String, dynamic> data) {
   final senderEmail = data['senderEmail'];
   final senderID = data['senderID'];
+  final String? callType = data['callType']; // Added for call handling
+  final String? channelName = data['channelName']; // Added for call handling
+
   print("--- _handleNavigation Called ---");
   print("Sender ID: $senderID, Current Open Chat: $currentChatUserId");
+  print("Call Type: $callType, Channel Name: $channelName");
 
   if (senderEmail != null && senderID != null) {
     // Prevent duplicate navigation if already in this chat
@@ -149,7 +167,52 @@ void _handleNavigation(Map<String, dynamic> data) {
       return;
     }
 
-    Future.delayed(const Duration(milliseconds: 900), () {
+    if (senderID == null || FirebaseAuth.instance.currentUser == null) {
+      print("Cannot navigate: Sender ID or current user is null.");
+      return;
+    }
+
+    // --- Handle Call Notifications ---
+    if (callType != null && channelName != null) {
+      // If already in a call on this channel, don't navigate again
+      if (currentCallChannel == channelName) {
+        print("Already on call channel $channelName. Skipping navigation.");
+        return;
+      }
+
+      // Set currentCallChannel to prevent duplicate navigation
+      currentCallChannel = channelName;
+
+      // calling Push notification to call screen
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (navigatorKey.currentState != null) {
+          print("Navigator state is valid. Pushing VideoCallPage...");
+          navigatorKey.currentState!
+              .push(
+                MaterialPageRoute(
+                  builder: (_) => VideoCallPage(
+                    channelName: channelName,
+                    isVideoCall: callType == "Video",
+                  ),
+                ),
+              )
+              .then((_) {
+                // Reset currentCallChannel when the call page is popped
+                currentCallChannel = null;
+              });
+        } else {
+          print("Navigator not ready for call, scheduling again...");
+          SchedulerBinding.instance.addPostFrameCallback((_) {
+            // Use SchedulerBinding to wait for next frame
+            _handleNavigation(data);
+          });
+        }
+      });
+      return;
+    }
+
+    // auto navigate push notification
+    Future.delayed(const Duration(milliseconds: 500), () {
       try {
         if (navigatorKey.currentState != null) {
           print("Navigator state is valid. Pushing ChatScreen...");
