@@ -375,6 +375,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         context,
                         MaterialPageRoute(
                           builder: (context) => ChatScreen(
+                            currentUserEmail:
+                                FirebaseAuth.instance.currentUser!.email!,
                             receiverEmail: email,
                             receiverID: uid,
                             currentUserId: currentUser.uid,
@@ -745,6 +747,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   context,
                   MaterialPageRoute(
                     builder: (_) => ChatScreen(
+                      currentUserEmail:
+                          FirebaseAuth.instance.currentUser!.email!,
                       receiverEmail: otherUserEmail,
                       receiverID: otherUserId,
                       currentUserId: currentUserId,

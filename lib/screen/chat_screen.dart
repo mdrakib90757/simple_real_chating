@@ -13,33 +13,34 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:web_socket_app/model/message_model/message_model.dart';
 import 'package:web_socket_app/screen/camera/cameraScreen.dart';
 import 'package:web_socket_app/screen/photo_display_screen/photo_display_screen.dart';
-import 'package:web_socket_app/screen/video_call_screen/video_call_screen.dart';
 import 'package:web_socket_app/screen/video_display_screen/video_display_screen.dart';
 import 'package:web_socket_app/utils/color.dart';
-import 'package:web_socket_app/widgets/call_controller/call_controller.dart' hide token;
+import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
 import '../ChatService/chatService.dart';
 import 'package:web_socket_app/main.dart';
 import 'package:flutter/foundation.dart' as foundation;
 import 'package:crypto/crypto.dart';
-import 'package:crypto/crypto.dart';
-
 import '../notification_handle/notificationHandle.dart';
-import 'audio_call_page/audio_call_page.dart';
+import '../utils/setting/setting.dart';
+import 'call_screen/call_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String receiverEmail;
   final String receiverID;
   final String currentUserId;
   final String receiverUserId;
+  final String currentUserEmail;
   const ChatScreen({
     super.key,
     required this.receiverEmail,
     required this.receiverID,
     required this.currentUserId,
     required this.receiverUserId,
+    required this.currentUserEmail,
   });
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -72,7 +73,6 @@ class _ChatScreenState extends State<ChatScreen> {
   final String CLOUDINARY_API_SECRET = "572xxi7X4yqr_3Y-wRcJ7EgJUJs";
 
   // final String url = "https://api.cloudinary.com/v1_1/$cloudName/$cloudinaryResourceType/destroy";
-
   @override
   void initState() {
     super.initState();
@@ -656,43 +656,41 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     return email;
   }
-
-  Future<void> sendCallInvitation({
-    required String channelName,
-    required String callType,
-  }) async {
-    DocumentSnapshot receiverDoc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(widget.receiverID)
-        .get();
-    String? receiverFcmToken = receiverDoc['fcmToken'];
-
-    if (receiverFcmToken == null) {
-      print("Receiver FCM token not found!");
-      // Potentially show a message to the user
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "Cannot call: Receiver is offline or token not available.",
-          ),
-        ),
-      );
-      return;
-    }
-
-    // Use the new method from NotificationHandler
-    await _notificationHandler?.sendCallNotification(
-      fcmToken: receiverFcmToken,
-      title: 'Incoming ${callType} Call',
-      body: 'from ${currentUser.email?.split('@')[0]}',
-      senderId: currentUser.uid,
-      senderEmail: currentUser.email!,
-      channelName: channelName,
-      callType: callType,
-    );
-
-    print("FCM call invitation sent successfully!");
-  }
+  //
+  // Widget buildCallPage(
+  //     {required String callerID,
+  //       required String callerName,
+  //       required String calleeID,
+  //       required bool isAudioCall}) {
+  //   // Unique callID generation (important for ZegoCloud)
+  //   List<String> userIDs = [callerID, calleeID];
+  //   userIDs.sort(); // Consistent ordering for callID
+  //   String callID = "call_id_${userIDs.join('_')}";
+  //
+  //   return ZegoUIKitPrebuiltCall(
+  //       appID: ZegoConfig.appID,
+  //       appSign: ZegoConfig.appSign,
+  //       userID: callerID,
+  //       userName: callerName,
+  //       callID: callID,
+  //       config: isAudioCall
+  //           ? ZegoUIKitPrebuiltCallConfig.oneOnOneAudioCall()
+  //           : ZegoUIKitPrebuiltCallConfig.oneOnOneVideoCall()
+  //         ..layout = ZegoLayout.pictureInPicture()
+  //         ..turnOnCameraWhenJoining = !isAudioCall
+  //         ..turnOnMicrophoneWhenJoining = true
+  //         ..topMenuBarConfig.buttons.addAll([
+  //           ZegoCallMenuBarButton.minimizingButton,
+  //           ZegoCallMenuBarButton.toggleCameraButton,
+  //           ZegoCallMenuBarButton.toggleMicrophoneButton,
+  //           ZegoCallMenuBarButton.hangUpButton,
+  //         ])
+  //         ..onOnlySelfInRoom: (context) {
+  //     Navigator.of(context).pop();
+  //   },
+  //   );}
+  //
+  //
 
   @override
   Widget build(BuildContext context) {
@@ -736,23 +734,24 @@ class _ChatScreenState extends State<ChatScreen> {
             // audio call
             GestureDetector(
               onTap: () async {
-                String channel =
-                    "voice_${widget.receiverEmail.replaceAll('.', '_').replaceAll('@', '_')}";
-                await sendCallInvitation(
-                  channelName: channel,
-                  callType: "Audio",
-                );
+                final currentUser = FirebaseAuth.instance.currentUser;
+                if (currentUser == null) return;
+
+                final List<String> participants = [
+                  currentUser.uid,
+                  widget.receiverUserId,
+                ]..sort();
+                final String callID = "call_${participants.join('_')}";
+
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => AudioCallPage(
-                      channelName: channel,
-                      // channelName: channel,
-                      // isVideoCall: false,
-                      // receiverEmail:
-                      //     widget.receiverEmail, // Pass receiver email
-                      // receiverPhotoUrl:
-                      //     _receiverPhotoUrl, // Pass receiver photo URL
+                    builder: (context) => CallPage(
+                      callerID: currentUser.uid,
+                      callerName: currentUser.email ?? currentUser.uid,
+                      calleeID: widget.receiverUserId,
+                      isAudioCall: true,
+                      callID: callID, // Pass the generated callID
                     ),
                   ),
                 );
@@ -762,23 +761,24 @@ class _ChatScreenState extends State<ChatScreen> {
             SizedBox(width: 20),
             GestureDetector(
               onTap: () async {
-                String channel =
-                    "video_${widget.receiverEmail.replaceAll('.', '_').replaceAll('@', '_')}";
-                await sendCallInvitation(
-                  channelName: channel,
-                  callType: "Video",
-                );
+                final currentUser = FirebaseAuth.instance.currentUser;
+                if (currentUser == null) return;
+
+                final List<String> participants = [
+                  currentUser.uid,
+                  widget.receiverUserId,
+                ]..sort();
+                final String callID = "call_${participants.join('_')}";
+
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => VideoCallPage(
-                      channelName: channel, token: token,
-                      // channelName: channel,
-                      // isVideoCall: true,
-                      // receiverEmail:
-                      //     widget.receiverEmail, // Pass receiver email
-                      // receiverPhotoUrl:
-                      //     _receiverPhotoUrl, // Pass receiver photo URL
+                    builder: (context) => CallPage(
+                      callerID: currentUser.uid,
+                      callerName: currentUser.email ?? currentUser.uid,
+                      calleeID: widget.receiverUserId,
+                      isAudioCall: false,
+                      callID: callID, // Pass the generated callID
                     ),
                   ),
                 );
