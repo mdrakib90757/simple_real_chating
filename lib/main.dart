@@ -11,6 +11,8 @@ import 'package:web_socket_app/screen/chat_screen.dart';
 import 'package:flutter/scheduler.dart' hide Priority;
 import 'package:web_socket_app/screen/home_screen.dart';
 import 'package:web_socket_app/screen/video_call_screen/video_call_screen.dart';
+import 'package:web_socket_app/widgets/call_controller/call_controller.dart' hide token;
+import 'package:web_socket_app/widgets/index/index.dart';
 
 import 'screen/incoming_call_screen/incoming_call_screen.dart';
 
@@ -210,10 +212,12 @@ void _handleNavigation(Map<String, dynamic> data) {
                           .push(
                             MaterialPageRoute(
                               builder: (_) => VideoCallPage(
-                                // Use VideoCallPage for both audio/video, it handles disabling video
                                 channelName: channelName,
-                                isVideoCall: callType == "Video",
-                                receiverEmail: senderEmail,
+                                token:token,
+                                // Use VideoCallPage for both audio/video, it handles disabling video
+                                // channelName: channelName,
+                                // isVideoCall: callType == "Video",
+                                // receiverEmail: senderEmail,
                                 // receiverPhotoUrl: getCallerPhoto(senderID), // You might fetch this
                               ),
                             ),

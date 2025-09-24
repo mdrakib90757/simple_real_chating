@@ -19,6 +19,7 @@ import 'package:web_socket_app/screen/photo_display_screen/photo_display_screen.
 import 'package:web_socket_app/screen/video_call_screen/video_call_screen.dart';
 import 'package:web_socket_app/screen/video_display_screen/video_display_screen.dart';
 import 'package:web_socket_app/utils/color.dart';
+import 'package:web_socket_app/widgets/call_controller/call_controller.dart' hide token;
 import '../ChatService/chatService.dart';
 import 'package:web_socket_app/main.dart';
 import 'package:flutter/foundation.dart' as foundation;
@@ -26,6 +27,7 @@ import 'package:crypto/crypto.dart';
 import 'package:crypto/crypto.dart';
 
 import '../notification_handle/notificationHandle.dart';
+import 'audio_call_page/audio_call_page.dart';
 
 class ChatScreen extends StatefulWidget {
   final String receiverEmail;
@@ -743,13 +745,14 @@ class _ChatScreenState extends State<ChatScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => VideoCallPage(
+                    builder: (_) => AudioCallPage(
                       channelName: channel,
-                      isVideoCall: false,
-                      receiverEmail:
-                          widget.receiverEmail, // Pass receiver email
-                      receiverPhotoUrl:
-                          _receiverPhotoUrl, // Pass receiver photo URL
+                      // channelName: channel,
+                      // isVideoCall: false,
+                      // receiverEmail:
+                      //     widget.receiverEmail, // Pass receiver email
+                      // receiverPhotoUrl:
+                      //     _receiverPhotoUrl, // Pass receiver photo URL
                     ),
                   ),
                 );
@@ -769,12 +772,13 @@ class _ChatScreenState extends State<ChatScreen> {
                   context,
                   MaterialPageRoute(
                     builder: (_) => VideoCallPage(
-                      channelName: channel,
-                      isVideoCall: true,
-                      receiverEmail:
-                          widget.receiverEmail, // Pass receiver email
-                      receiverPhotoUrl:
-                          _receiverPhotoUrl, // Pass receiver photo URL
+                      channelName: channel, token: token,
+                      // channelName: channel,
+                      // isVideoCall: true,
+                      // receiverEmail:
+                      //     widget.receiverEmail, // Pass receiver email
+                      // receiverPhotoUrl:
+                      //     _receiverPhotoUrl, // Pass receiver photo URL
                     ),
                   ),
                 );

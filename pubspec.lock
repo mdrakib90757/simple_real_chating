@@ -507,6 +507,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.29"
+  flutter_ringtone_player:
+    dependency: "direct main"
+    description:
+      name: flutter_ringtone_player
+      sha256: ae4a2caab2cfd14902f3ee5fe0307c454b396f0077fa34700238d6c4bd99cfec
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.0.0+4"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -525,6 +533,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.0"
+  get:
+    dependency: "direct main"
+    description:
+      name: get
+      sha256: c79eeb4339f1f3deffd9ec912f8a923834bec55f7b49c9e882b8fef2c139d425
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.7.2"
   google_identity_services_web:
     dependency: transitive
     description:
@@ -649,10 +665,10 @@ packages:
     dependency: transitive
     description:
       name: js
-      sha256: "53385261521cc4a0c4658fd0ad07a7d14591cf8fc33abbceae306ddb974888dc"
+      sha256: f2c445dce49627136094980615a031419f7f3eb393237e4ecd97ac15dea343f3
       url: "https://pub.dev"
     source: hosted
-    version: "0.7.2"
+    version: "0.6.7"
   json_annotation:
     dependency: transitive
     description:
@@ -853,6 +869,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "7.0.1"
+  pip_view:
+    dependency: "direct main"
+    description:
+      name: pip_view
+      sha256: "1ba2abcc3229dc6df72e6f23e263c966f9b0fbf3cb6a4b87bbef01ad9a930c81"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.9.7"
   platform:
     dependency: transitive
     description:
