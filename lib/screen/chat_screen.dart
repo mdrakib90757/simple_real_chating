@@ -27,6 +27,7 @@ import 'package:crypto/crypto.dart';
 import '../notification_handle/notificationHandle.dart';
 import '../utils/setting/setting.dart';
 import 'call_screen/call_screen.dart';
+import 'calling_screen/calling_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String receiverEmail;
@@ -656,41 +657,54 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     return email;
   }
-  //
-  // Widget buildCallPage(
-  //     {required String callerID,
-  //       required String callerName,
-  //       required String calleeID,
-  //       required bool isAudioCall}) {
-  //   // Unique callID generation (important for ZegoCloud)
-  //   List<String> userIDs = [callerID, calleeID];
-  //   userIDs.sort(); // Consistent ordering for callID
-  //   String callID = "call_id_${userIDs.join('_')}";
-  //
-  //   return ZegoUIKitPrebuiltCall(
-  //       appID: ZegoConfig.appID,
-  //       appSign: ZegoConfig.appSign,
-  //       userID: callerID,
-  //       userName: callerName,
-  //       callID: callID,
-  //       config: isAudioCall
-  //           ? ZegoUIKitPrebuiltCallConfig.oneOnOneAudioCall()
-  //           : ZegoUIKitPrebuiltCallConfig.oneOnOneVideoCall()
-  //         ..layout = ZegoLayout.pictureInPicture()
-  //         ..turnOnCameraWhenJoining = !isAudioCall
-  //         ..turnOnMicrophoneWhenJoining = true
-  //         ..topMenuBarConfig.buttons.addAll([
-  //           ZegoCallMenuBarButton.minimizingButton,
-  //           ZegoCallMenuBarButton.toggleCameraButton,
-  //           ZegoCallMenuBarButton.toggleMicrophoneButton,
-  //           ZegoCallMenuBarButton.hangUpButton,
-  //         ])
-  //         ..onOnlySelfInRoom: (context) {
-  //     Navigator.of(context).pop();
-  //   },
-  //   );}
-  //
-  //
+
+  Future<String?> _getReceiverFcmToken(String receiverUserId) async {
+    final doc = await FirebaseFirestore.instance
+        .collection("users")
+        .doc(receiverUserId)
+        .get();
+
+    if (doc.exists && doc.data() != null) {
+      return doc.data()!["fcmToken"];
+    }
+    return null;
+  }
+
+  Future<void> _startCall({required bool isAudio}) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    final List<String> participants = [currentUser.uid, widget.receiverUserId]
+      ..sort();
+    final String callID = "call_${participants.join('_')}";
+
+    final calleeFcmToken = await _getReceiverFcmToken(widget.receiverUserId);
+    if (calleeFcmToken != null) {
+      await NotificationHandler(context).sendCallNotification(
+        fcmToken: calleeFcmToken,
+        title: "Incoming ${isAudio ? 'Audio' : 'Video'} Call",
+        body: "From ${currentUser.email ?? currentUser.uid}",
+        senderId: currentUser.uid,
+        senderEmail: currentUser.email ?? currentUser.uid,
+        channelName: callID,
+        callType: isAudio ? "audio" : "video",
+        //notificationType: "call",
+      );
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CallingScreen(
+          receiverPhotoUrl: _receiverPhotoUrl!,
+          isAudioCall: isAudio,
+          callID: callID,
+          receiverID: widget.receiverUserId,
+          receiverEmail: widget.receiverEmail,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -732,58 +746,20 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             // audio call
-            GestureDetector(
-              onTap: () async {
-                final currentUser = FirebaseAuth.instance.currentUser;
-                if (currentUser == null) return;
-
-                final List<String> participants = [
-                  currentUser.uid,
-                  widget.receiverUserId,
-                ]..sort();
-                final String callID = "call_${participants.join('_')}";
-
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => CallPage(
-                      callerID: currentUser.uid,
-                      callerName: currentUser.email ?? currentUser.uid,
-                      calleeID: widget.receiverUserId,
-                      isAudioCall: true,
-                      callID: callID, // Pass the generated callID
-                    ),
-                  ),
-                );
+            IconButton(
+              onPressed: () async {
+                await _startCall(isAudio: true);
               },
-              child: Icon(Icons.call, color: Colors.white),
+              icon: Icon(Icons.call, color: Colors.white),
             ),
+
             SizedBox(width: 20),
-            GestureDetector(
-              onTap: () async {
-                final currentUser = FirebaseAuth.instance.currentUser;
-                if (currentUser == null) return;
-
-                final List<String> participants = [
-                  currentUser.uid,
-                  widget.receiverUserId,
-                ]..sort();
-                final String callID = "call_${participants.join('_')}";
-
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => CallPage(
-                      callerID: currentUser.uid,
-                      callerName: currentUser.email ?? currentUser.uid,
-                      calleeID: widget.receiverUserId,
-                      isAudioCall: false,
-                      callID: callID, // Pass the generated callID
-                    ),
-                  ),
-                );
+            //video call
+            IconButton(
+              onPressed: () async {
+                await _startCall(isAudio: false);
               },
-              child: Icon(Icons.video_call, color: Colors.white),
+              icon: Icon(Icons.video_call, color: Colors.white),
             ),
           ],
         ),

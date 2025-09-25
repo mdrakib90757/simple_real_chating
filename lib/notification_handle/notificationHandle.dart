@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:googleapis_auth/auth_io.dart';
@@ -174,4 +176,13 @@ class NotificationHandler {
       print("Error sending $callType call notification: $e");
     }
   }
+}
+
+Future<void> sendCallCancelledNotification(
+  String receiverID,
+  String callID,
+) async {
+  await FirebaseFirestore.instance.collection('calls').doc(callID).set({
+    'status': 'cancelled',
+  }, SetOptions(merge: true));
 }

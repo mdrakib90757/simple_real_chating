@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:camera/camera.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -21,6 +22,9 @@ import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   print("Background Message: ${message.messageId}");
+  print("--- Background Message Handler ---");
+  print("Message ID: ${message.messageId}");
+  print("Message data: ${message.data}");
 }
 
 const AndroidNotificationChannel channel = AndroidNotificationChannel(
@@ -74,7 +78,7 @@ void main() async {
 
   WidgetsFlutterBinding.ensureInitialized();
 
-  // cameras = await availableCameras();
+  cameras = await availableCameras();
   runApp(MyApp());
 }
 
@@ -162,17 +166,28 @@ void setupFirebaseListeners() {
   // App opened from background by tapping notification
   FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
     print("--- Notification tapped from background ---");
+    print("--- Notification tapped from background ---");
+    print("Message data: ${message.data}");
     _handleNavigation(message.data);
   });
   // App opened from terminated state
   FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
     if (message != null) {
       print("--- App opened from terminated state ---");
+      print("Message data: ${message.data}");
       Future.delayed(const Duration(seconds: 1), () {
         _handleNavigation(message.data);
       });
     }
   });
+}
+
+Future<String> _getUserPhoto(String userID) async {
+  final doc = await FirebaseFirestore.instance
+      .collection('users')
+      .doc(userID)
+      .get();
+  return doc['photoUrl'] ?? "";
 }
 
 /// Handle navigation for messages and calls
@@ -183,16 +198,30 @@ void _handleNavigation(Map<String, dynamic> data) async {
   final channelName = data['channelName'];
   final notificationType = data['notificationType'];
 
-  if (senderEmail == null || senderID == null) return;
+  print("---- 🔔 _handleNavigation Called ----");
+  print("senderEmail: $senderEmail");
+  print("senderID: $senderID");
+  print("callType: $callType");
+  print("channelName: $channelName");
+  print("notificationType: $notificationType");
+  print("Current FirebaseAuth UID: ${FirebaseAuth.instance.currentUser?.uid}");
 
+  if (senderEmail == null || senderID == null) return;
+  final currentUser = FirebaseAuth.instance.currentUser!;
+
+  // ✅ Caller skip
+  if (currentUser.uid == senderID) {
+    print("⚠️ Caller notification skipped");
+    return;
+  }
   while (navigatorKey.currentState == null) {
     await Future.delayed(const Duration(milliseconds: 100));
   }
 
+  // Call notification
   if (notificationType == 'call' && channelName != null) {
-    final currentUser = FirebaseAuth.instance.currentUser!;
     final isAudioCall = callType == 'audio';
-
+    final callerPhotoUrl = await _getUserPhoto(senderID);
     navigatorKey.currentState!.push(
       MaterialPageRoute(
         builder: (_) => IncomingCallPage(
@@ -201,25 +230,79 @@ void _handleNavigation(Map<String, dynamic> data) async {
           calleeID: currentUser.uid,
           isAudioCall: isAudioCall,
           callID: channelName,
+          callerPhotoUrl: callerPhotoUrl,
         ),
       ),
     );
+    return; // Don't fall through to chat
   }
-  currentChatUserId = senderID;
-  navigatorKey.currentState!
-      .push(
-        MaterialPageRoute(
-          builder: (_) => ChatScreen(
-            currentUserEmail: FirebaseAuth.instance.currentUser!.email!,
-            receiverEmail: senderEmail,
-            receiverID: senderID,
-            currentUserId: FirebaseAuth.instance.currentUser!.uid,
-            receiverUserId: senderID,
+
+  // Chat notification
+  if (notificationType == 'chat') {
+    if (currentChatUserId == senderID) return; // Already in chat
+    currentChatUserId = senderID;
+
+    navigatorKey.currentState!
+        .push(
+          MaterialPageRoute(
+            builder: (_) => ChatScreen(
+              currentUserEmail: currentUser.email!,
+              receiverEmail: senderEmail,
+              receiverID: senderID,
+              currentUserId: currentUser.uid,
+              receiverUserId: senderID,
+            ),
           ),
-        ),
-      )
-      .then((_) => currentChatUserId = null);
+        )
+        .then((_) => currentChatUserId = null);
+  }
 }
+
+// /// Handle navigation for messages and calls
+// void _handleNavigation(Map<String, dynamic> data) async {
+//   final senderEmail = data['senderEmail'];
+//   final senderID = data['senderID'];
+//   final callType = data['callType'];
+//   final channelName = data['channelName'];
+//   final notificationType = data['notificationType'];
+//
+//   if (senderEmail == null || senderID == null) return;
+//
+//   while (navigatorKey.currentState == null) {
+//     await Future.delayed(const Duration(milliseconds: 100));
+//   }
+//
+//   if (notificationType == 'call' && channelName != null) {
+//     final currentUser = FirebaseAuth.instance.currentUser!;
+//     final isAudioCall = callType == 'audio';
+//
+//     navigatorKey.currentState!.push(
+//       MaterialPageRoute(
+//         builder: (_) => IncomingCallPage(
+//           callerID: senderID,
+//           callerName: senderEmail,
+//           calleeID: currentUser.uid,
+//           isAudioCall: isAudioCall,
+//           callID: channelName,
+//         ),
+//       ),
+//     );
+//   }
+//   currentChatUserId = senderID;
+//   navigatorKey.currentState!
+//       .push(
+//         MaterialPageRoute(
+//           builder: (_) => ChatScreen(
+//             currentUserEmail: FirebaseAuth.instance.currentUser!.email!,
+//             receiverEmail: senderEmail,
+//             receiverID: senderID,
+//             currentUserId: FirebaseAuth.instance.currentUser!.uid,
+//             receiverUserId: senderID,
+//           ),
+//         ),
+//       )
+//       .then((_) => currentChatUserId = null);
+// }
 
 /// Navigate to chat screen
 // void _handleNavigation(Map<String, dynamic> data) {
