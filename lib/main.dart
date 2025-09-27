@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -14,6 +15,7 @@ import 'package:web_socket_app/screen/chat_screen.dart';
 import 'package:flutter/scheduler.dart' hide Priority;
 import 'package:web_socket_app/screen/home_screen.dart';
 import 'package:web_socket_app/screen/incomaing_screen/incomaing_screen.dart';
+import 'package:web_socket_app/screen/splash_screen/splash_screen.dart';
 import 'package:web_socket_app/utils/setting/setting.dart';
 import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
 import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
@@ -25,6 +27,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   print("--- Background Message Handler ---");
   print("Message ID: ${message.messageId}");
   print("Message data: ${message.data}");
+  final data = message.data;
 }
 
 const AndroidNotificationChannel channel = AndroidNotificationChannel(
@@ -107,7 +110,7 @@ class MyApp extends StatelessWidget {
                 currentUser.email ?? currentUser.uid,
               );
             }
-            return HomeScreen();
+            return SplashScreen();
           }
           return LoginScreen();
         },
@@ -115,6 +118,8 @@ class MyApp extends StatelessWidget {
     );
   }
 }
+
+bool isCallActiveOrIncoming = false;
 
 String? currentChatUserId;
 String? currentCallChannel;
@@ -137,8 +142,16 @@ void setupFirebaseListeners() {
     print("--- Foreground Message ---");
     RemoteNotification? notification = message.notification;
     AndroidNotification? android = message.notification?.android;
+    final data = message.data;
+    final notificationType = data['notificationType'];
+    if (notificationType == 'call') {
+      _handleNavigation(data); // This will show the overlay
+      // We explicitly DO NOT show a generic local notification for calls
+      return; // Stop further processing for this call message
 
-    if (notification != null) {
+    }
+
+      if (notification != null &&  !isCallActiveOrIncoming) {
       // Show heads-up local notification
       flutterLocalNotificationsPlugin.show(
         notification.hashCode,
@@ -192,6 +205,7 @@ Future<String> _getUserPhoto(String userID) async {
 
 /// Handle navigation for messages and calls
 void _handleNavigation(Map<String, dynamic> data) async {
+
   final senderEmail = data['senderEmail'];
   final senderID = data['senderID'];
   final callType = data['callType'];
@@ -214,32 +228,41 @@ void _handleNavigation(Map<String, dynamic> data) async {
     print("⚠️ Caller notification skipped");
     return;
   }
+
   while (navigatorKey.currentState == null) {
-    await Future.delayed(const Duration(milliseconds: 100));
+    await Future.delayed(const Duration(milliseconds: 50));
   }
 
   // Call notification
   if (notificationType == 'call' && channelName != null) {
+
+    if (isCallActiveOrIncoming) {
+      print("Another call is already active/incoming. Ignoring new call notification.");
+      return; // Ignore if another call is already being handled
+    }
+    isCallActiveOrIncoming = true; //
+
     final isAudioCall = callType == 'audio';
     final callerPhotoUrl = await _getUserPhoto(senderID);
-    navigatorKey.currentState!.push(
-      MaterialPageRoute(
-        builder: (_) => IncomingCallPage(
-          callerID: senderID,
-          callerName: senderEmail,
-          calleeID: currentUser.uid,
-          isAudioCall: isAudioCall,
-          callID: channelName,
-          callerPhotoUrl: callerPhotoUrl,
-        ),
-      ),
-    );
-    return; // Don't fall through to chat
+
+    showIncomingCallOverlayWithNavigatorKey(
+      callerName: senderEmail,
+      callerPhotoUrl: callerPhotoUrl,
+      callerID: senderID,
+      calleeID: currentUser.uid,
+      isAudioCall: isAudioCall,
+      callID: channelName,
+    ).then((_) {
+      // Once the overlay is removed (call answered/declined/timed out), reset the flag
+      isCallActiveOrIncoming = false;
+    });
+    return; // Exit as call is handled
   }
 
+
   // Chat notification
-  if (notificationType == 'chat') {
-    if (currentChatUserId == senderID) return; // Already in chat
+  if (notificationType == 'chat' && !isCallActiveOrIncoming) {
+    if (currentChatUserId == senderID) return;
     currentChatUserId = senderID;
 
     navigatorKey.currentState!
@@ -257,143 +280,3 @@ void _handleNavigation(Map<String, dynamic> data) async {
         .then((_) => currentChatUserId = null);
   }
 }
-
-// /// Handle navigation for messages and calls
-// void _handleNavigation(Map<String, dynamic> data) async {
-//   final senderEmail = data['senderEmail'];
-//   final senderID = data['senderID'];
-//   final callType = data['callType'];
-//   final channelName = data['channelName'];
-//   final notificationType = data['notificationType'];
-//
-//   if (senderEmail == null || senderID == null) return;
-//
-//   while (navigatorKey.currentState == null) {
-//     await Future.delayed(const Duration(milliseconds: 100));
-//   }
-//
-//   if (notificationType == 'call' && channelName != null) {
-//     final currentUser = FirebaseAuth.instance.currentUser!;
-//     final isAudioCall = callType == 'audio';
-//
-//     navigatorKey.currentState!.push(
-//       MaterialPageRoute(
-//         builder: (_) => IncomingCallPage(
-//           callerID: senderID,
-//           callerName: senderEmail,
-//           calleeID: currentUser.uid,
-//           isAudioCall: isAudioCall,
-//           callID: channelName,
-//         ),
-//       ),
-//     );
-//   }
-//   currentChatUserId = senderID;
-//   navigatorKey.currentState!
-//       .push(
-//         MaterialPageRoute(
-//           builder: (_) => ChatScreen(
-//             currentUserEmail: FirebaseAuth.instance.currentUser!.email!,
-//             receiverEmail: senderEmail,
-//             receiverID: senderID,
-//             currentUserId: FirebaseAuth.instance.currentUser!.uid,
-//             receiverUserId: senderID,
-//           ),
-//         ),
-//       )
-//       .then((_) => currentChatUserId = null);
-// }
-
-/// Navigate to chat screen
-// void _handleNavigation(Map<String, dynamic> data) {
-//   final senderEmail = data['senderEmail'];
-//   final senderID = data['senderID'];
-//   final String? callType = data['callType']; // Added for call handling
-//   final String? channelName = data['channelName'];
-//   final String? notificationType = data['notificationType']; // Added for call handling
-//   print("--- _handleNavigation Called ---");
-//   print("Sender ID: $senderID, Current Open Chat: $currentChatUserId");
-//   print("Call Type: $callType, Channel Name: $channelName");
-//
-//   if (senderEmail != null && senderID != null) {
-//     // Prevent duplicate navigation if already in this chat
-//     if (currentChatUserId == senderID) {
-//       print("Already on chat screen with $senderID. Skipping navigation.");
-//       return;
-//     }
-//
-//     if (senderID == null || FirebaseAuth.instance.currentUser == null) {
-//       print("Cannot navigate: Sender ID or current user is null.");
-//       return;
-//     }
-//
-//
-//
-//     // Handle Call Notifications
-//     if (notificationType == 'call' && channelName != null && senderEmail != null) {
-//       final currentUser = FirebaseAuth.instance.currentUser!;
-//       final bool isAudioCall = callType == 'audio';
-//
-//       Future.delayed(const Duration(milliseconds: 500), () {
-//         if (navigatorKey.currentState != null) {
-//           print("Navigator state is valid. Pushing IncomingCallPage...");
-//           navigatorKey.currentState!.push(
-//             MaterialPageRoute(
-//               builder: (_) => IncomingCallPage(
-//                 callerID: senderID,
-//                 callerName: senderEmail, // Assuming senderEmail is the caller's display name
-//                 calleeID: currentUser.uid,
-//                 isAudioCall: isAudioCall,
-//                 callID: channelName, // Pass the Zego callID to IncomingCallPage
-//               ),
-//             ),
-//           );
-//         } else {
-//           print("Navigator not ready yet, scheduling call navigation again...");
-//           _handleNavigation(data);
-//         }
-//       });
-//       return; // Important: Don't fall through to chat navigation
-//     }
-//
-//
-//
-//
-//
-//
-// // Handle message Notifications
-//     if (notificationType != 'call' && senderEmail != null) {
-//
-//       if (currentChatUserId == senderID) {
-//         print("Already on chat screen with $senderID. Skipping navigation.");
-//         return;
-//       }
-//
-//       Future.delayed(const Duration(milliseconds: 500), () {
-//         try {
-//           if (navigatorKey.currentState != null) {
-//             print("Navigator state is valid. Pushing ChatScreen...");
-//             navigatorKey.currentState!.push(
-//               MaterialPageRoute(
-//                 builder: (_) => ChatScreen(
-//                   currentUserEmail: FirebaseAuth.instance.currentUser!.email!,
-//                   receiverEmail: senderEmail,
-//                   receiverID: senderID,
-//                   currentUserId: FirebaseAuth.instance.currentUser!.uid,
-//                   receiverUserId: senderID,
-//                 ),
-//               ),
-//             );
-//           } else {
-//             print("Navigator not ready yet, scheduling again...");
-//             _handleNavigation(data);
-//           }
-//         } catch (e) {
-//           print("Navigation error Error ${e}");
-//         }
-//       });
-//     }
-//
-//
-//   }
-// }

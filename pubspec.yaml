@@ -61,6 +61,8 @@ dependencies:
   flutter_ringtone_player: ^4.0.0+4
   zego_uikit_prebuilt_call: ^4.18.4
   floating: ^6.0.0
+  zego_uikit_signaling_plugin:
+
 
 
 dev_dependencies:

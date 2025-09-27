@@ -12,6 +12,7 @@ class ProfileService {
   static const String _cloudName = "dlqufneob";
   static const String _uploadPreset = "chat_app_unsigned";
 
+  // Upload image to Cloudinary
   Future<String?> uploadProfileImage(File imageFile) async {
     try {
       final url = Uri.parse(
@@ -43,6 +44,7 @@ class ProfileService {
     }
   }
 
+  // Update Firebase Auth + Firestore
   Future<bool> updateUserProfile({String? name, String? photoURL}) async {
     final User? currentUser = _firebaseAuth.currentUser;
     if (currentUser == null) {

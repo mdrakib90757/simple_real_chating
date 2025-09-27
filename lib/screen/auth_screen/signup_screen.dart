@@ -16,76 +16,76 @@ class _SignupScreenState extends State<SignupScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController = TextEditingController();
+
+  final _formKey = GlobalKey<FormState>();
+
   bool _isLoading = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
 
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
+  Future<void> signup() async {
+    if (!_formKey.currentState!.validate()) return;
 
-  Future<void> _SignUp() async {
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
+
     try {
-      final String email = _emailController.text.trim();
-      final String password = _passwordController.text.trim();
-      if (email.isEmpty || password.isEmpty) {
-        throw FirebaseAuthException(
-          code: "fields-empty",
-          message: "please filled the password and email ",
-        );
-      }
-      UserCredential userCredential = await _auth
-          .createUserWithEmailAndPassword(email: email, password: password);
-      User? user = userCredential.user;
-      if (user != null) {
-        String? fcmToken = await FirebaseMessaging.instance.getToken();
-        if (fcmToken != null) {
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .set({
-                'fcmToken': fcmToken,
-                'email': email,
-                'createdAt': FieldValue.serverTimestamp(),
-                'updatedAt': FieldValue.serverTimestamp(),
-              }, SetOptions(merge: true));
-          print("FCM token saved: $fcmToken");
-          await user.sendEmailVerification();
+      UserCredential userCredential =
+      await _auth.createUserWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
 
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  "Registration Successful send email verification link",
-                ),
-              ),
-            );
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const EmailVerificationScreen(),
-              ),
-            );
-          }
-        }
+      await userCredential.user?.sendEmailVerification();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Account created! Verify your email before login."),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context); // back to login
       }
     } on FirebaseAuthException catch (e) {
+      String errorMessage;
+      if (e.code == 'email-already-in-use') {
+        errorMessage = "This email is already registered.";
+      } else if (e.code == 'weak-password') {
+        errorMessage = "Password should be at least 6 characters.";
+      } else {
+        errorMessage = e.message ?? "Signup failed.";
+      }
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(e.message ?? "error problem")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMessage), backgroundColor: Colors.red),
+        );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  String? validateEmail(String? value) {
+    if (value == null || value.isEmpty) return "Enter your email.";
+    final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@gmail\.com$');
+    if (!emailRegex.hasMatch(value)) {
+      return "Enter a valid Gmail address.";
+    }
+    return null;
+  }
+
+  String? validatePassword(String? value) {
+    if (value == null || value.isEmpty) return "Enter your password.";
+    if (value.length < 6) return "Password must be at least 6 characters.";
+    return null;
+  }
+
+  String? validateConfirmPassword(String? value) {
+    if (value != _passwordController.text) {
+      return "Passwords do not match.";
+    }
+    return null;
   }
 
   @override
@@ -93,96 +93,105 @@ class _SignupScreenState extends State<SignupScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Center(
+        padding: const EdgeInsets.all(20),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisAlignment:MainAxisAlignment.center,
+            children: [    Center(
               child: Image.asset(
                 "assets/image/chat.png",
+                color: AppColor.primaryColor,
                 height: 100,
                 width: 100,
-                color: AppColor.primaryColor,
               ),
             ),
-            SizedBox(height: 10),
-            Text(
-              "Chatter",
-              style: TextStyle(
-                color: AppColor.primaryColor,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
+              const SizedBox(height: 20),
+              Text(
+                "Chatter",
+                style: TextStyle(
+                  color: AppColor.primaryColor,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            SizedBox(height: 10),
-            Text(
-              "WORLD`S MOST PRIVATE CHATTING APP",
-              style: TextStyle(
-                color: AppColor.primaryColor,
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
+              const SizedBox(height: 25),
+              TextFormField(
+                controller: _emailController,
+                decoration: InputDecoration(
+                  hintText: "Enter Gmail",
+                  prefixIcon: Icon(Icons.email, color: AppColor.primaryColor),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                validator: validateEmail,
               ),
-            ),
-            SizedBox(height: 10),
-            TextField(
-              controller: _emailController,
-              decoration: InputDecoration(
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: Colors.white,
-                prefixIcon: Icon(Icons.email, color: AppColor.primaryColor),
-                hintText: "Email",
-              ),
-            ),
-            SizedBox(height: 5),
-            TextField(
-              controller: _passwordController,
-              decoration: InputDecoration(
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: Colors.white,
-                prefixIcon: Icon(Icons.lock, color: AppColor.primaryColor),
-                hintText: "Password",
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColor.primaryColor,
-                minimumSize: Size(double.infinity, 50),
-              ),
-              onPressed: _isLoading ? null : _SignUp,
-              child: _isLoading
-                  ? CircularProgressIndicator(color: Colors.white)
-                  : Text(
-                      "SIGNUP",
-                      style: TextStyle(color: Colors.white, fontSize: 15),
+              const SizedBox(height: 15),
+              TextFormField(
+                controller: _passwordController,
+                obscureText: _obscurePassword,
+                decoration: InputDecoration(
+                  hintText: "Password",
+                  prefixIcon: Icon(Icons.lock, color: AppColor.primaryColor),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      color: AppColor.primaryColor,
                     ),
-            ),
-          ],
+                    onPressed: () {
+                      setState(() => _obscurePassword = !_obscurePassword);
+                    },
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                validator: validatePassword,
+              ),
+              const SizedBox(height: 15),
+              TextFormField(
+                controller: _confirmPasswordController,
+                obscureText: _obscureConfirmPassword,
+                decoration: InputDecoration(
+                  hintText: "Confirm Password",
+                  prefixIcon: Icon(Icons.lock, color: AppColor.primaryColor),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscureConfirmPassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
+                      color: AppColor.primaryColor,
+                    ),
+                    onPressed: () {
+                      setState(() =>
+                      _obscureConfirmPassword = !_obscureConfirmPassword);
+                    },
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                validator: validateConfirmPassword,
+              ),
+              const SizedBox(height: 25),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColor.primaryColor,
+                  minimumSize: const Size(double.infinity, 50),
+                ),
+                onPressed: _isLoading ? null : signup,
+                child: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text("SIGNUP",
+                    style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          )
+
+
+          ),
         ),
-      ),
-    );
+      );
   }
 }

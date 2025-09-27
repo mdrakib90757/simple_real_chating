@@ -23,6 +23,7 @@ import 'package:web_socket_app/main.dart';
 import 'package:flutter/foundation.dart' as foundation;
 import 'package:crypto/crypto.dart';
 import '../notification_handle/notificationHandle.dart';
+import '../utils/call_handler/call_handler.dart';
 import 'call_screen/call_screen.dart';
 import 'calling_screen/calling_screen.dart';
 
@@ -622,6 +623,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  //fetch receiver photo
   Future<void> _fetchReceiverPhotoUrl() async {
     try {
       DocumentSnapshot userDoc = await _firebaseFirestore
@@ -641,6 +643,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  // get receiver ReceiverEmail
   String _getTruncatedReceiverEmail(String email) {
     const String targetString = "mdrakibdeveloper";
     const int maxDisplayLength = targetString.length;
@@ -655,6 +658,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return email;
   }
 
+  // get receiver FCMToke
   Future<String?> _getReceiverFcmToken(String receiverUserId) async {
     final doc = await FirebaseFirestore.instance
         .collection("users")
@@ -667,37 +671,69 @@ class _ChatScreenState extends State<ChatScreen> {
     return null;
   }
 
+  // get receiver profile photo
+  Future<String> getReceiverPhoto(String userID) async {
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(userID)
+        .get();
+    if (doc.exists) {
+      return doc.data()?['photoUrl'] ?? '';
+    }
+    return '';
+  }
+
   Future<void> _startCall({required bool isAudio}) async {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return;
 
-    final List<String> participants = [currentUser.uid, widget.receiverUserId]
-      ..sort();
-    final String callID = "call_${participants.join('_')}";
+    final String callID = "call_${currentUser.uid}_${widget.receiverID}";
 
-    final calleeFcmToken = await _getReceiverFcmToken(widget.receiverUserId);
-    if (calleeFcmToken != null) {
+    await chatService.sendMessage(
+      context: context,
+      senderId: currentUser.uid,
+      receiverId: widget.receiverUserId,
+      message: isAudio ? "📞 Audio Call" : "🎥 Video Call",
+      type: "call",
+      isAudioCall: isAudio,
+    );
+
+    // Create Firestore call document
+    await FirebaseFirestore.instance.collection('calls').doc(callID).set({
+      "callerID": currentUser.uid,
+      "calleeID": widget.receiverID,
+      "callerName": currentUser.email ?? currentUser.uid,
+      "status": "calling", // initially calling
+      "callType": isAudio ? "audio" : "video",
+      "startTime": FieldValue.serverTimestamp(),
+    });
+
+    // Send push notification to callee
+    final fcmToken = await _getReceiverFcmToken(widget.receiverID);
+    if (fcmToken != null) {
       await NotificationHandler(context).sendCallNotification(
-        fcmToken: calleeFcmToken,
+        fcmToken: fcmToken,
         title: "Incoming ${isAudio ? 'Audio' : 'Video'} Call",
         body: "From ${currentUser.email ?? currentUser.uid}",
         senderId: currentUser.uid,
         senderEmail: currentUser.email ?? currentUser.uid,
         channelName: callID,
         callType: isAudio ? "audio" : "video",
-        //notificationType: "call",
+        // notificationType: "call",
       );
     }
 
+    // Navigate directly to CallPage
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => CallingScreen(
-          receiverPhotoUrl: _receiverPhotoUrl!,
-          isAudioCall: isAudio,
+        builder: (_) => CallPage(
+          callerID: currentUser.uid,
+          callerName: currentUser.email ?? currentUser.uid,
+          calleeID: widget.receiverID,
           callID: callID,
-          receiverID: widget.receiverUserId,
-          receiverEmail: widget.receiverEmail,
+          isAudioCall: isAudio,
+          isCaller: true,
         ),
       ),
     );
@@ -745,6 +781,8 @@ class _ChatScreenState extends State<ChatScreen> {
             // audio call
             IconButton(
               onPressed: () async {
+                final currentUser = FirebaseAuth.instance.currentUser;
+                if (currentUser == null) return;
                 await _startCall(isAudio: true);
               },
               icon: Icon(Icons.call, color: Colors.white),
@@ -754,6 +792,8 @@ class _ChatScreenState extends State<ChatScreen> {
             //video call
             IconButton(
               onPressed: () async {
+                final currentUser = FirebaseAuth.instance.currentUser;
+                if (currentUser == null) return;
                 await _startCall(isAudio: false);
               },
               icon: Icon(Icons.video_call, color: Colors.white),
@@ -810,6 +850,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       repliedTo: repliedMessageInfo,
                       fileName: data['fileName'],
                       publicId: data['publicId'],
+                      isAudioCall: data['isAudioCall'],
                     );
                     return _buildMessageBubble(message, doc);
                   },
@@ -1006,7 +1047,47 @@ class _ChatScreenState extends State<ChatScreen> {
                     padding: (message.repliedTo != null)
                         ? const EdgeInsets.fromLTRB(8, 0, 8, 8)
                         : EdgeInsets.zero,
-                    child: message.type == "image"
+                    child: message.type == "call"
+                        ? Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.orangeAccent.shade100,
+                              borderRadius: BorderRadius.only(
+                                topLeft: Radius.circular(20),
+                                topRight: Radius.circular(20),
+                                bottomLeft: isMe
+                                    ? Radius.circular(20)
+                                    : Radius.zero,
+                                bottomRight: isMe
+                                    ? Radius.zero
+                                    : Radius.circular(20),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.call, color: Colors.white),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    data['message'] ??
+                                        ((message.isAudioCall ?? true)
+                                            ? "Audio Call"
+                                            : "Video Call"),
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : message.type == "image"
                         ? GestureDetector(
                             onTap: () {
                               if (message.imageUrl != null) {

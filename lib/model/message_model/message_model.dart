@@ -8,6 +8,7 @@ class Message {
   final RepliedMessageInfo? repliedTo;
   final String? fileName;
   final String? publicId;
+  final bool? isAudioCall;
 
   Message({
     required this.sender,
@@ -19,6 +20,7 @@ class Message {
     this.isRead,
     this.fileName,
     this.publicId,
+    this.isAudioCall,
   });
 
   factory Message.fromMap(Map<String, dynamic> data, String currentUserEmail) {
@@ -31,6 +33,7 @@ class Message {
       isMe: data['sender']?.toString() == currentUserEmail,
       fileName: data['fileName'],
       publicId: data['publicId'],
+      isAudioCall: data['isAudioCall'],
     );
   }
 }

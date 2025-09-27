@@ -38,7 +38,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
     _cooldownTimer?.cancel();
     super.dispose();
   }
-
+  /// Start cooldown for "Resend Email" button
   void startCooldownTimer() {
     _canResendEmail = false;
     _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -60,6 +60,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
     });
   }
 
+  /// Check if current user has verified email
   Future<void> checkEmailVerified() async {
     User? user = _auth.currentUser;
     if (user == null) return;
@@ -86,6 +87,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
     }
   }
 
+  /// Resend verification email
   Future<void> resendVerificationEmail() async {
     if (!_canResendEmail) return;
 
@@ -172,6 +174,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                 style: TextStyle(fontSize: 16, color: Colors.grey[600]),
               ),
               const SizedBox(height: 40),
+              // Resend Email Button
               ElevatedButton(
                 onPressed: _canResendEmail ? resendVerificationEmail : null,
                 style: ElevatedButton.styleFrom(
@@ -195,6 +198,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                 ),
               ),
               const SizedBox(height: 15),
+              // Switch account
               TextButton(
                 onPressed: () async {
                   await _auth.signOut();
