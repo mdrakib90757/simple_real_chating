@@ -719,7 +719,7 @@ class _ChatScreenState extends State<ChatScreen> {
         senderEmail: currentUser.email ?? currentUser.uid,
         channelName: callID,
         callType: isAudio ? "audio" : "video",
-        // notificationType: "call",
+        notificationType: "call",
       );
     }
 

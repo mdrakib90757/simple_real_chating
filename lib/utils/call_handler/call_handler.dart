@@ -109,10 +109,11 @@ class CallHandler {
         senderEmail: currentUser.email ?? currentUser.uid,
         channelName: callID,
         callType: isAudio ? "audio" : "video",
+        notificationType: 'call',
       );
     }
 
-    /// ✅ Check if CallPage already exists
+    /// Check if CallPage already exists
     if (ModalRoute.of(context)?.settings.name != "/call") {
       Navigator.push(
         context,

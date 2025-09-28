@@ -38,6 +38,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
     _cooldownTimer?.cancel();
     super.dispose();
   }
+
   /// Start cooldown for "Resend Email" button
   void startCooldownTimer() {
     _canResendEmail = false;

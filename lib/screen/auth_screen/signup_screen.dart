@@ -16,7 +16,8 @@ class _SignupScreenState extends State<SignupScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmPasswordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
 
   final _formKey = GlobalKey<FormState>();
 
@@ -30,11 +31,11 @@ class _SignupScreenState extends State<SignupScreen> {
     setState(() => _isLoading = true);
 
     try {
-      UserCredential userCredential =
-      await _auth.createUserWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
-      );
+      UserCredential userCredential = await _auth
+          .createUserWithEmailAndPassword(
+            email: _emailController.text.trim(),
+            password: _passwordController.text.trim(),
+          );
 
       await userCredential.user?.sendEmailVerification();
 
@@ -97,15 +98,16 @@ class _SignupScreenState extends State<SignupScreen> {
         child: Form(
           key: _formKey,
           child: Column(
-            mainAxisAlignment:MainAxisAlignment.center,
-            children: [    Center(
-              child: Image.asset(
-                "assets/image/chat.png",
-                color: AppColor.primaryColor,
-                height: 100,
-                width: 100,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Center(
+                child: Image.asset(
+                  "assets/image/chat.png",
+                  color: AppColor.primaryColor,
+                  height: 100,
+                  width: 100,
+                ),
               ),
-            ),
               const SizedBox(height: 20),
               Text(
                 "Chatter",
@@ -136,7 +138,9 @@ class _SignupScreenState extends State<SignupScreen> {
                   prefixIcon: Icon(Icons.lock, color: AppColor.primaryColor),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      _obscurePassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
                       color: AppColor.primaryColor,
                     ),
                     onPressed: () {
@@ -164,8 +168,10 @@ class _SignupScreenState extends State<SignupScreen> {
                       color: AppColor.primaryColor,
                     ),
                     onPressed: () {
-                      setState(() =>
-                      _obscureConfirmPassword = !_obscureConfirmPassword);
+                      setState(
+                        () =>
+                            _obscureConfirmPassword = !_obscureConfirmPassword,
+                      );
                     },
                   ),
                   border: OutlineInputBorder(
@@ -183,15 +189,15 @@ class _SignupScreenState extends State<SignupScreen> {
                 onPressed: _isLoading ? null : signup,
                 child: _isLoading
                     ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text("SIGNUP",
-                    style: TextStyle(color: Colors.white)),
+                    : const Text(
+                        "SIGNUP",
+                        style: TextStyle(color: Colors.white),
+                      ),
               ),
             ],
-          )
-
-
           ),
         ),
-      );
+      ),
+    );
   }
 }

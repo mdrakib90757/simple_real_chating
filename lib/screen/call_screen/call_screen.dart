@@ -1,4 +1,3 @@
-
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -96,9 +95,12 @@ class _CallPageState extends State<CallPage>
             return;
           }
 
-          //End or timeout
-          if (newStatus == "ended" || newStatus == "timeout") {
-            if (mounted) Navigator.pop(context);
+          // If receiver declines or call ends
+          if (status == "declined" ||
+              status == "ended" ||
+              status == "timeout") {
+            if (mounted && Navigator.canPop(context)) Navigator.pop(context);
+            return;
           }
 
           // Accepted → Navigate to Zego UI
@@ -144,6 +146,23 @@ class _CallPageState extends State<CallPage>
         ),
       ),
     );
+  }
+
+  //accept function
+  Future<void> _acceptCall() async {
+    await FirebaseFirestore.instance.collection('calls').doc(widget.callID).set(
+      {'status': 'accepted'},
+      SetOptions(merge: true),
+    );
+  }
+
+  //decline call function
+  Future<void> _declineCall() async {
+    await FirebaseFirestore.instance.collection('calls').doc(widget.callID).set(
+      {'status': 'declined'},
+      SetOptions(merge: true),
+    );
+    if (mounted && Navigator.canPop(context)) Navigator.pop(context);
   }
 
   Future<void> _endCall() async {

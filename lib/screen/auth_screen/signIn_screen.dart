@@ -50,18 +50,21 @@ class _LoginScreenState extends State<LoginScreen> {
         if (user!.emailVerified) {
           String? fcmToken = await FirebaseMessaging.instance.getToken();
           if (fcmToken != null) {
-            await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-              'fcmToken': fcmToken,
-              'email': user.email,
-              'updatedAt': FieldValue.serverTimestamp(),
-            }, SetOptions(merge: true));
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .set({
+                  'fcmToken': fcmToken,
+                  'email': user.email,
+                  'updatedAt': FieldValue.serverTimestamp(),
+                }, SetOptions(merge: true));
           }
 
           if (mounted) {
             Navigator.pushAndRemoveUntil(
               context,
               MaterialPageRoute(builder: (context) => const HomeScreen()),
-                  (route) => false,
+              (route) => false,
             );
           }
         } else {
@@ -74,7 +77,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: () async {
                     await user?.sendEmailVerification();
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Verification email sent again")),
+                      const SnackBar(
+                        content: Text("Verification email sent again"),
+                      ),
                     );
                   },
                 ),
@@ -178,7 +183,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   prefixIcon: Icon(Icons.lock, color: AppColor.primaryColor),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      _obscurePassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
                       color: AppColor.primaryColor,
                     ),
                     onPressed: () {
@@ -202,7 +209,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 onPressed: _isLoading ? null : login,
                 child: _isLoading
                     ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text("SIGN IN", style: TextStyle(color: Colors.white)),
+                    : const Text(
+                        "SIGN IN",
+                        style: TextStyle(color: Colors.white),
+                      ),
               ),
 
               const SizedBox(height: 15),
@@ -212,7 +222,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const SignupScreen()),
+                    MaterialPageRoute(
+                      builder: (context) => const SignupScreen(),
+                    ),
                   );
                 },
                 child: const Text(

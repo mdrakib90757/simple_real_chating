@@ -41,7 +41,6 @@ class ChatService {
     }
   }
 
-
   /// Sends a chat message from [senderId] to [receiverId].
   /// Can also send images, documents, or call notifications.
   ///
@@ -141,6 +140,7 @@ class ChatService {
 
     // Send push notification to all tokens
     final notifier = NotificationHandler(context);
+
     for (String token in receiverTokens) {
       await notifier.sendPushNotification(
         token,

@@ -21,15 +21,6 @@ import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
 import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
 import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
 
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
-  print("Background Message: ${message.messageId}");
-  print("--- Background Message Handler ---");
-  print("Message ID: ${message.messageId}");
-  print("Message data: ${message.data}");
-  final data = message.data;
-}
-
 const AndroidNotificationChannel channel = AndroidNotificationChannel(
   'high_importance_channel',
   'High Importance Notifications',
@@ -67,7 +58,7 @@ void main() async {
     onDidReceiveNotificationResponse: (NotificationResponse response) {
       if (response.payload != null) {
         final data = jsonDecode(response.payload!);
-        _handleNavigation(data);
+        _handleCallNotification(data);
       }
     },
   );
@@ -145,56 +136,65 @@ void setupFirebaseListeners() {
     final data = message.data;
     final notificationType = data['notificationType'];
     if (notificationType == 'call') {
-      _handleNavigation(data); // This will show the overlay
-      // We explicitly DO NOT show a generic local notification for calls
-      return; // Stop further processing for this call message
-
-    }
-
-      if (notification != null &&  !isCallActiveOrIncoming) {
-      // Show heads-up local notification
-      flutterLocalNotificationsPlugin.show(
-        notification.hashCode,
-        notification.title,
-        notification.body,
-        NotificationDetails(
-          android: AndroidNotificationDetails(
-            channel.id,
-            channel.name,
-            channelDescription: channel.description,
-            importance: Importance.high,
-            priority: Priority.high,
-            playSound: true,
-            icon: 'ic_stat_notification_bell',
+      _handleCallNotification(data);
+      return;
+    } else if (notificationType == 'chat') {
+      RemoteNotification? notification = message.notification;
+      if (notification != null) {
+        flutterLocalNotificationsPlugin.show(
+          notification.hashCode,
+          notification.title ?? "New Message",
+          notification.body ?? "",
+          NotificationDetails(
+            android: AndroidNotificationDetails(
+              channel.id,
+              channel.name,
+              channelDescription: channel.description,
+              importance: Importance.high,
+              priority: Priority.high,
+              playSound: true,
+            ),
           ),
-        ),
-        payload: jsonEncode(message.data),
-      );
-
-      // Auto navigate immediately
-      _handleNavigation(message.data);
+          payload: jsonEncode(data),
+        );
+        // Auto navigate immediately
+        _handleChatNotification(data);
+      }
     }
   });
 
   // App opened from background by tapping notification
   FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-    print("--- Notification tapped from background ---");
-    print("--- Notification tapped from background ---");
-    print("Message data: ${message.data}");
-    _handleNavigation(message.data);
+    final data = message.data;
+    final notificationType = data['notificationType'];
+
+    if (notificationType == 'call') {
+      _handleCallNotification(data);
+    } else if (notificationType == 'chat') {
+      _handleChatNotification(data);
+    }
   });
+
   // App opened from terminated state
   FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
     if (message != null) {
-      print("--- App opened from terminated state ---");
-      print("Message data: ${message.data}");
-      Future.delayed(const Duration(seconds: 1), () {
-        _handleNavigation(message.data);
-      });
+      final data = message.data;
+      final notificationType = data['notificationType'];
+
+      if (notificationType == 'call') {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _handleCallNotification(data);
+        });
+      } else if (notificationType == 'chat') {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _handleChatNotification(data);
+        });
+      }
     }
   });
 }
 
+// get user photo
 Future<String> _getUserPhoto(String userID) async {
   final doc = await FirebaseFirestore.instance
       .collection('users')
@@ -203,80 +203,82 @@ Future<String> _getUserPhoto(String userID) async {
   return doc['photoUrl'] ?? "";
 }
 
-/// Handle navigation for messages and calls
-void _handleNavigation(Map<String, dynamic> data) async {
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
 
-  final senderEmail = data['senderEmail'];
-  final senderID = data['senderID'];
-  final callType = data['callType'];
-  final channelName = data['channelName'];
+  final data = message.data;
   final notificationType = data['notificationType'];
 
-  print("---- 🔔 _handleNavigation Called ----");
-  print("senderEmail: $senderEmail");
-  print("senderID: $senderID");
-  print("callType: $callType");
-  print("channelName: $channelName");
-  print("notificationType: $notificationType");
-  print("Current FirebaseAuth UID: ${FirebaseAuth.instance.currentUser?.uid}");
+  if (notificationType == 'call') {
+    // Show local notification
+    await flutterLocalNotificationsPlugin.show(
+      0,
+      "📞 Incoming Call",
+      data['senderEmail'], // message body
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          channel.id,
+          channel.name,
+          channelDescription: channel.description,
+          importance: Importance.high,
+          priority: Priority.high,
+          playSound: true,
+        ),
+      ),
+      payload: jsonEncode(data), // handle tap
+    );
+  }
+}
 
-  if (senderEmail == null || senderID == null) return;
+/// Handle call notification (overlay / screen)
+Future<void> _handleCallNotification(Map<String, dynamic> data) async {
+  if (isCallActiveOrIncoming) return; // Already handling another call
+  isCallActiveOrIncoming = true;
+
+  final senderID = data['senderID'];
+  final senderEmail = data['senderEmail'];
+  final channelName = data['channelName'];
+  final callType = data['callType'];
+
   final currentUser = FirebaseAuth.instance.currentUser!;
+  if (currentUser.uid == senderID) return; // Skip if caller is self
 
-  // ✅ Caller skip
-  if (currentUser.uid == senderID) {
-    print("⚠️ Caller notification skipped");
-    return;
-  }
+  final callerPhotoUrl = await _getUserPhoto(senderID);
+  final isAudioCall = callType == 'audio';
 
-  while (navigatorKey.currentState == null) {
-    await Future.delayed(const Duration(milliseconds: 50));
-  }
+  // Show overlay / call screen
+  showIncomingCall(
+    callerName: senderEmail,
+    callerPhotoUrl: callerPhotoUrl,
+    callerID: senderID,
+    calleeID: currentUser.uid,
+    isAudioCall: isAudioCall,
+    callID: channelName,
+  ).then((_) {
+    isCallActiveOrIncoming = false;
+  });
+}
 
-  // Call notification
-  if (notificationType == 'call' && channelName != null) {
+/// Handle chat notification
+void _handleChatNotification(Map<String, dynamic> data) {
+  final senderID = data['senderID'];
+  final senderEmail = data['senderEmail'];
+  final currentUser = FirebaseAuth.instance.currentUser!;
+  if (currentUser.uid == senderID || currentChatUserId == senderID) return;
 
-    if (isCallActiveOrIncoming) {
-      print("Another call is already active/incoming. Ignoring new call notification.");
-      return; // Ignore if another call is already being handled
-    }
-    isCallActiveOrIncoming = true; //
+  currentChatUserId = senderID;
 
-    final isAudioCall = callType == 'audio';
-    final callerPhotoUrl = await _getUserPhoto(senderID);
-
-    showIncomingCallOverlayWithNavigatorKey(
-      callerName: senderEmail,
-      callerPhotoUrl: callerPhotoUrl,
-      callerID: senderID,
-      calleeID: currentUser.uid,
-      isAudioCall: isAudioCall,
-      callID: channelName,
-    ).then((_) {
-      // Once the overlay is removed (call answered/declined/timed out), reset the flag
-      isCallActiveOrIncoming = false;
-    });
-    return; // Exit as call is handled
-  }
-
-
-  // Chat notification
-  if (notificationType == 'chat' && !isCallActiveOrIncoming) {
-    if (currentChatUserId == senderID) return;
-    currentChatUserId = senderID;
-
-    navigatorKey.currentState!
-        .push(
-          MaterialPageRoute(
-            builder: (_) => ChatScreen(
-              currentUserEmail: currentUser.email!,
-              receiverEmail: senderEmail,
-              receiverID: senderID,
-              currentUserId: currentUser.uid,
-              receiverUserId: senderID,
-            ),
+  navigatorKey.currentState!
+      .push(
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            currentUserEmail: currentUser.email!,
+            receiverEmail: senderEmail,
+            receiverID: senderID,
+            currentUserId: currentUser.uid,
+            receiverUserId: senderID,
           ),
-        )
-        .then((_) => currentChatUserId = null);
-  }
+        ),
+      )
+      .then((_) => currentChatUserId = null);
 }
