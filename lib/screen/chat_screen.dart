@@ -688,6 +688,8 @@ class _ChatScreenState extends State<ChatScreen> {
     if (currentUser == null) return;
 
     final String callID = "call_${currentUser.uid}_${widget.receiverID}";
+    print("📞 Starting ${isAudio ? "Audio" : "Video"} Call...");
+    print("👉 CallerID: ${currentUser.uid}, CalleeID: ${widget.receiverID}, CallID: $callID");
 
     await chatService.sendMessage(
       context: context,
@@ -707,6 +709,7 @@ class _ChatScreenState extends State<ChatScreen> {
       "callType": isAudio ? "audio" : "video",
       "startTime": FieldValue.serverTimestamp(),
     });
+    print("✅ Firestore call doc created with status=calling");
 
     // Send push notification to callee
     final fcmToken = await _getReceiverFcmToken(widget.receiverID);
@@ -721,6 +724,8 @@ class _ChatScreenState extends State<ChatScreen> {
         callType: isAudio ? "audio" : "video",
         notificationType: "call",
       );
+    }else{
+      print("⚠️ Receiver has no FCM Token saved!");
     }
 
     // Navigate directly to CallPage

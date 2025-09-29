@@ -23,7 +23,15 @@ Future<void> showIncomingCall({
   required bool isAudioCall,
   required String callID,
 }) async {
-  final uuid = Uuid().v4();
+
+  print("🔔 showIncomingCall() called");
+  print("➡️ Params:");
+  print("  callerName: $callerName");
+  print("  callerID: $callerID");
+  print("  calleeID: $calleeID");
+  print("  callID: $callID");
+  print("  isAudioCall: $isAudioCall");
+  print("  callerPhotoUrl: $callerPhotoUrl");
 
   CallKitParams params = CallKitParams(
     id: callID, // use actual callID
@@ -53,7 +61,10 @@ Future<void> showIncomingCall({
     ),
   );
 
+  print("📦 Final CallKitParams.extra => ${params.extra}");
   await FlutterCallkitIncoming.showCallkitIncoming(params);
+  print("✅ showCallkitIncoming triggered");
+
 }
 
 void startOutgoingCall({
@@ -66,6 +77,15 @@ void startOutgoingCall({
 }) async {
   final uuid = Uuid().v4();
 
+  print("📞 startOutgoingCall() called");
+  print("➡️ callerName: $callerName");
+  print("➡️ callerEmail: $callerEmail");
+  print("➡️ callerID: $callerID");
+  print("➡️ calleeID: $calleeID");
+  print("➡️ callID: $callID");
+  print("➡️ isAudio: $isAudio");
+  print("➡️ generated uuid: $uuid");
+
   CallKitParams params = CallKitParams(
     id: uuid,
     nameCaller: callerName,
@@ -74,14 +94,33 @@ void startOutgoingCall({
     android: const AndroidParams(isCustomNotification: true),
   );
 
+  print("📦 Final Outgoing CallKitParams.extra => ${params.extra}");
+
   await FlutterCallkitIncoming.startCall(params);
+  print("✅ startCall triggered");
+
 
   FlutterCallkitIncoming.onEvent.listen((event) async {
     if (event == null) return;
+
     final extra = event.body?['extra'] ?? {};
+    final callID = extra['callID'] ?? '';
+    final callerID = extra['callerID'] ?? '';
+    final calleeID = extra['calleeID'] ?? '';
+    final callerName = extra['callerName'] ?? '';
+    final isAudio = extra['isAudioCall'] ?? true;
 
     switch (event.event) {
       case Event.actionCallAccept:
+        print("✅ Receiver accepted call: $callID");
+
+        // 1️⃣ Update Firestore status
+        await FirebaseFirestore.instance
+            .collection('calls')
+            .doc(callID)
+            .set({'status': 'accepted'}, SetOptions(merge: true));
+
+        // 2️⃣ Navigate to CallPage
         Navigator.push(
           navigatorKey.currentState!.context,
           MaterialPageRoute(
@@ -91,7 +130,7 @@ void startOutgoingCall({
               calleeID: calleeID,
               callID: callID,
               isAudioCall: isAudio,
-              isCaller: true,
+              isCaller: false,
             ),
           ),
         );
@@ -102,13 +141,25 @@ void startOutgoingCall({
       case Event.actionCallTimeout:
         await FirebaseFirestore.instance
             .collection('calls')
-            .doc(extra['callID'])
+            .doc(callID)
             .set({'status': 'ended'}, SetOptions(merge: true));
+        break;
+
+      case Event.actionCallIncoming:
+      // Show incoming call overlay
+        showIncomingCall(
+          callerName: callerName,
+          callerID: callerID,
+          calleeID: calleeID,
+          callID: callID,
+          isAudioCall: isAudio,
+
+        );
         break;
 
       default:
         break;
     }
   });
-}
 
+}

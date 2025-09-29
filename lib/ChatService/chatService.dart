@@ -150,6 +150,9 @@ class ChatService {
         senderEmail: senderEmail,
       );
     }
+    print("✉️ Sending message from $senderId → $receiverId");
+    print("📨 Message content: $message");
+    print("🎯 Receiver tokens: $receiverTokens");
     print(" Message sent & notification triggered!");
   }
 }
