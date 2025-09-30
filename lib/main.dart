@@ -1,34 +1,37 @@
 import 'dart:convert';
 import 'dart:developer';
-import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:floating/floating.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_callkit_incoming/entities/call_event.dart';
-import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:web_socket_app/firebase_options.dart';
 import 'package:web_socket_app/screen/auth_screen/signIn_screen.dart';
 import 'package:web_socket_app/screen/call_screen/call_screen.dart';
 import 'package:web_socket_app/screen/chat_screen.dart';
 import 'package:flutter/scheduler.dart' hide Priority;
-import 'package:web_socket_app/screen/home_screen.dart';
 import 'package:web_socket_app/screen/incomaing_screen/incomaing_screen.dart';
 import 'package:web_socket_app/screen/splash_screen/splash_screen.dart';
 import 'package:web_socket_app/utils/setting/setting.dart';
 import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
-import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
 import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
+// const AndroidNotificationChannel channel = AndroidNotificationChannel(
+//   'high_importance_channel',
+//   'High Importance Notifications',
+//   description: 'This channel is used for important notifications.',
+//   importance: Importance.high,
+// );
 
 const AndroidNotificationChannel channel = AndroidNotificationChannel(
-  'high_importance_channel',
-  'High Importance Notifications',
-  description: 'This channel is used for important notifications.',
-  importance: Importance.high,
+  'call_channel',
+  'Incoming Calls',
+  description: 'Used for incoming call notifications',
+  importance: Importance.max,
+  sound: RawResourceAndroidNotificationSound('ringtone'), // custom ringtone
+  playSound: true,
+  enableVibration: true,
 );
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -42,6 +45,13 @@ void main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
+  // // ZPNS token registration
+  // ZPNs.getDeviceToken().then((token) {
+  //   print("ZPNS Device Token: $token");
+  //   // এখানে তুমি তোমার server এ token পাঠাতে পারো
+  // });
+
+  // Setup local notification channel
   await flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin
@@ -61,18 +71,24 @@ void main() async {
     onDidReceiveNotificationResponse: (NotificationResponse response) {
       if (response.payload != null) {
         final data = jsonDecode(response.payload!);
-        _handleCallNotification(data);
+        if (response.actionId == 'ACCEPT_CALL') {
+          _acceptCall(data);
+        } else if (response.actionId == 'DECLINE_CALL') {
+          _declineCall(data);
+        } else {
+          _handleCallNotification(data);
+        }
       }
     },
   );
 
+  // Foreground notifications
   await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
     alert: true,
     badge: true,
     sound: true,
   );
   setupFirebaseListeners();
-  setupCallKitListener();
   WidgetsFlutterBinding.ensureInitialized();
 
   cameras = await availableCameras();
@@ -113,40 +129,49 @@ class MyApp extends StatelessWidget {
   }
 }
 
-
-
 bool isCallActiveOrIncoming = false;
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  print("Background Message: ${message.messageId}");
-  print("--- Background Message Handler ---");
-  print("Message ID: ${message.messageId}");
-  print("Message data: ${message.data}");
 
   final data = message.data;
-  final notificationType = data['notificationType'];
-
-  if (notificationType == 'call') {
-    // Show local notification
+  if (data['notificationType'] == 'call') {
     await flutterLocalNotificationsPlugin.show(
-      0,
+      1000,
       "📞 Incoming Call",
-      data['senderEmail'], // message body
+      "${data['senderEmail']} is calling...",
       NotificationDetails(
         android: AndroidNotificationDetails(
           channel.id,
           channel.name,
           channelDescription: channel.description,
-          importance: Importance.high,
-          priority: Priority.high,
+          importance: Importance.max,
+          priority: Priority.max,
+          fullScreenIntent: true, // 🔑 full screen
+          category: AndroidNotificationCategory.call,
+          ongoing: true,
+          autoCancel: false,
           playSound: true,
+          sound: RawResourceAndroidNotificationSound('ringtone'),
+          actions: <AndroidNotificationAction>[
+            AndroidNotificationAction(
+              'ACCEPT_CALL',
+              'Accept',
+              showsUserInterface: true,
+              cancelNotification: true,
+            ),
+            AndroidNotificationAction(
+              'DECLINE_CALL',
+              'Decline',
+              showsUserInterface: true,
+              cancelNotification: true,
+            ),
+          ],
         ),
       ),
-      payload: jsonEncode(data), // handle tap
+      payload: jsonEncode(data),
     );
   }
 }
-
 
 String? currentChatUserId;
 String? currentCallChannel;
@@ -163,106 +188,12 @@ void _onUserLogin(String userID, String userName) {
   );
 }
 
-
-
-void setupCallKitListener() {
-  FlutterCallkitIncoming.onEvent.listen((event) async {
-    if (event == null) {
-      log("Received null CallKit event, skipping...");
-      return;
-    }
-    final extra = event.body?['extra'] ?? {};
-    final callID = extra['callID'];
-    final callerID = extra['callerID'];
-    final callerName = extra['callerName'];
-    final calleeID = extra['calleeID'];
-    final isAudioCall = extra['isAudioCall'] ?? true;
-    log("CallKit event: ${event.event}, callID: $callID, callerID: $callerID, calleeID: $calleeID");
-
-    switch (event.event) {
-      case Event.actionCallAccept:
-        log("CallKit: ActionCallAccept for callID: $callID");
-        // CallKit UI বন্ধ করুন
-        await FlutterCallkitIncoming.endCall(callID);
-
-        // নেভিগেশন নিশ্চিত করতে WidgetsBinding.instance.addPostFrameCallback ব্যবহার করুন
-        // এটি নিশ্চিত করবে যে নেভিগেশন UI ফ্রেম বিল্ড হওয়ার পরে ঘটবে।
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          // নিশ্চিত করুন যে navigatorKey.currentState null না হয়
-          if (navigatorKey.currentState != null) {
-            // CallPage-এ নেভিগেট করুন
-            navigatorKey.currentState!.push(
-              MaterialPageRoute(
-                builder: (_) => CallPage(
-                  callerID: callerID,
-                  callerName: callerName,
-                  calleeID: calleeID,
-                  callID: callID,
-                  isAudioCall: isAudioCall,
-                  isCaller: false, // রিসিভার তাই isCaller: false
-                ),
-              ),
-            );
-            log("CallKit: Navigated to CallPage for accepted call.");
-          } else {
-            log("CallKit: navigatorKey.currentState is null, cannot navigate.");
-          }
-        });
-        break;
-    // অন্যান্য ইভেন্ট হ্যান্ডেলিং...
-      case Event.actionCallDecline:
-      case Event.actionCallEnded:
-      case Event.actionCallTimeout:
-        log("CallKit: Call ended/declined/timeout for callID: $callID");
-        await FlutterCallkitIncoming.endCall(callID); // CallKit UI বন্ধ করুন
-        await FirebaseFirestore.instance
-            .collection('calls')
-            .doc(callID)
-            .set({'status': 'ended'}, SetOptions(merge: true));
-        if (navigatorKey.currentState != null && navigatorKey.currentState!.canPop()) {
-          navigatorKey.currentState!.pop(); // যদি কল স্ক্রিন থাকে তবে পপ করুন
-        }
-        break;
-      default:
-        log("CallKit: Unhandled event: ${event.event}");
-        break;
-    }
-  });
-}
-
 ///  Foreground message listener setup (call this from HomeScreen initState)
 void setupFirebaseListeners() {
-  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-    print("--- Foreground Message ---");
-    RemoteNotification? notification = message.notification;
-    AndroidNotification? android = message.notification?.android;
+  FirebaseMessaging.onMessage.listen((message) {
     final data = message.data;
-    final notificationType = data['notificationType'];
-    if (notificationType == 'call') {
+    if (data['notificationType'] == 'call') {
       _handleCallNotification(data);
-      return;
-    } else if (notificationType == 'chat') {
-      RemoteNotification? notification = message.notification;
-      if (notification != null) {
-        flutterLocalNotificationsPlugin.show(
-          notification.hashCode,
-          notification.title ?? "New Message",
-          notification.body ?? "",
-          NotificationDetails(
-            android: AndroidNotificationDetails(
-              channel.id,
-              channel.name,
-              channelDescription: channel.description,
-              importance: Importance.high,
-              priority: Priority.high,
-              playSound: true,
-            ),
-          ),
-          payload: jsonEncode(data),
-        );
-        // Auto navigate immediately
-        _handleChatNotification(data);
-      }
     }
   });
 
@@ -281,7 +212,6 @@ void setupFirebaseListeners() {
       _handleChatNotification(data);
     }
   });
-
   // App opened from terminated state
   FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
     if (message != null) {
@@ -292,7 +222,7 @@ void setupFirebaseListeners() {
 
       if (notificationType == 'call') {
         Future.delayed(const Duration(milliseconds: 500), () {
-          _handleCallNotification(data);
+          showFullScreenIncomingCall(message.data);
         });
       } else if (notificationType == 'chat') {
         Future.delayed(const Duration(milliseconds: 500), () {
@@ -312,10 +242,8 @@ Future<String> _getUserPhoto(String userID) async {
   return doc['photoUrl'] ?? "";
 }
 
-
 /// Handle call notification (overlay / screen)
 Future<void> _handleCallNotification(Map<String, dynamic> data) async {
-
   final senderID = data['senderID'];
   final senderEmail = data['senderEmail'];
   final channelName = data['channelName'];
@@ -337,17 +265,14 @@ Future<void> _handleCallNotification(Map<String, dynamic> data) async {
   final isAudioCall = callType == 'audio';
 
   // Show overlay / call screen
-  showIncomingCall(
+  showIncomingCallOverlayWithNavigatorKey(
     callerName: senderEmail,
-    callerPhotoUrl: callerPhotoUrl,
     callerID: senderID,
     calleeID: currentUser.uid,
     isAudioCall: isAudioCall,
     callID: channelName,
-  ).then((_) {
-
-  });
-
+    callerPhotoUrl: callerPhotoUrl,
+  );
 }
 
 /// Handle chat notification
@@ -356,14 +281,14 @@ void _handleChatNotification(Map<String, dynamic> data) {
   final senderEmail = data['senderEmail'];
   final currentUser = FirebaseAuth.instance.currentUser!;
 
-
-  log("Handling chat from senderID: $senderID, currentUserID: ${currentUser.uid}");
+  log(
+    "Handling chat from senderID: $senderID, currentUserID: ${currentUser.uid}",
+  );
 
   if (currentUser.uid == senderID || currentChatUserId == senderID) {
     log("Ignoring chat because it's from self or already open");
     return;
   }
-
 
   if (currentUser.uid == senderID || currentChatUserId == senderID) return;
 
@@ -383,4 +308,101 @@ void _handleChatNotification(Map<String, dynamic> data) {
       )
       .then((_) => currentChatUserId = null);
   log("ChatScreen closed for senderID: $senderID");
+}
+
+// Future<void> initNotifications() async {
+//   const AndroidInitializationSettings androidInit =
+//   AndroidInitializationSettings('ic_stat_call');
+//
+//   final InitializationSettings initializationSettings =
+//   InitializationSettings(android: androidInit);
+//
+//   await flutterLocalNotificationsPlugin.initialize(
+//     initializationSettings,
+//     onDidReceiveNotificationResponse: (NotificationResponse response) async {
+//       if (response.payload != null) {
+//         final data = jsonDecode(response.payload!);
+//
+//         if (response.actionId == 'ACCEPT_CALL') {
+//           _acceptCall(data);
+//         } else if (response.actionId == 'DECLINE_CALL') {
+//           _declineCall(data);
+//         } else {
+//           // Default tap → navigate
+//           _handleNotificationTap(data);
+//         }
+//       }
+//     },
+//   );
+//
+//   await flutterLocalNotificationsPlugin
+//       .resolvePlatformSpecificImplementation<
+//       AndroidFlutterLocalNotificationsPlugin>()
+//       ?.createNotificationChannel(channel);
+// }
+
+Future<void> showFullScreenIncomingCall(Map<String, dynamic> data) async {
+  await flutterLocalNotificationsPlugin.show(
+    999, // unique ID
+    "📞 Incoming Call",
+    "${data['senderEmail'] ?? 'Unknown'} is calling...",
+    NotificationDetails(
+      android: AndroidNotificationDetails(
+        channel.id,
+        channel.name,
+        channelDescription: channel.description,
+        importance: Importance.max,
+        priority: Priority.max,
+        fullScreenIntent: true, // 🔑 Full screen intent
+        ongoing: true,
+        autoCancel: false,
+        playSound: true,
+        sound: RawResourceAndroidNotificationSound('ringtone'),
+        actions: <AndroidNotificationAction>[
+          AndroidNotificationAction(
+            'ACCEPT_CALL',
+            'Accept',
+            showsUserInterface: true,
+            cancelNotification: true,
+          ),
+          AndroidNotificationAction(
+            'DECLINE_CALL',
+            'Decline',
+            showsUserInterface: true,
+            cancelNotification: true,
+          ),
+        ],
+      ),
+    ),
+    payload: jsonEncode(data),
+  );
+}
+
+Future<void> _acceptCall(Map<String, dynamic> data) async {
+  final currentUser = FirebaseAuth.instance.currentUser!;
+  final callID = data['channelName'];
+
+  await FirebaseFirestore.instance.collection('calls').doc(callID).set({
+    "status": "accepted",
+  }, SetOptions(merge: true));
+
+  navigatorKey.currentState?.push(
+    MaterialPageRoute(
+      builder: (_) => CallPage(
+        callID: callID,
+        callerID: data['senderID'],
+        calleeID: currentUser.uid,
+        isAudioCall: data['callType'] == 'audio',
+        isCaller: false, // ✅ user accepted = callee
+        callerName: data["senderEmail"],
+      ),
+    ),
+  );
+}
+
+Future<void> _declineCall(Map<String, dynamic> data) async {
+  await FirebaseFirestore.instance
+      .collection('calls')
+      .doc(data['channelName'])
+      .set({"status": "declined"}, SetOptions(merge: true));
 }

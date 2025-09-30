@@ -104,8 +104,8 @@ class NotificationHandler {
     required String senderId,
     required String senderEmail,
     required String channelName,
-    required String callType, required
-    String notificationType, // "Audio" or "Video"
+    required String callType,
+    required String notificationType, // "Audio" or "Video"
   }) async {
     final Map<String, dynamic> payload = {
       'message': {
@@ -124,7 +124,7 @@ class NotificationHandler {
           'notification': {
             'channel_id': 'high_importance_channel',
             'sound':
-            'sound.mp3', // Make sure this path is correct relative to raw/
+                'sound.mp3', // Make sure this path is correct relative to raw/
             'tag': 'call_${channelName}',
           },
         },

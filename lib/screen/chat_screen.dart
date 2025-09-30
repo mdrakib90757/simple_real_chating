@@ -25,7 +25,6 @@ import 'package:crypto/crypto.dart';
 import '../notification_handle/notificationHandle.dart';
 import '../utils/call_handler/call_handler.dart';
 import 'call_screen/call_screen.dart';
-import 'calling_screen/calling_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String receiverEmail;
@@ -683,13 +682,16 @@ class _ChatScreenState extends State<ChatScreen> {
     return '';
   }
 
+  // start call for user
   Future<void> _startCall({required bool isAudio}) async {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return;
 
     final String callID = "call_${currentUser.uid}_${widget.receiverID}";
     print("📞 Starting ${isAudio ? "Audio" : "Video"} Call...");
-    print("👉 CallerID: ${currentUser.uid}, CalleeID: ${widget.receiverID}, CallID: $callID");
+    print(
+      "👉 CallerID: ${currentUser.uid}, CalleeID: ${widget.receiverID}, CallID: $callID",
+    );
 
     await chatService.sendMessage(
       context: context,
@@ -724,7 +726,7 @@ class _ChatScreenState extends State<ChatScreen> {
         callType: isAudio ? "audio" : "video",
         notificationType: "call",
       );
-    }else{
+    } else {
       print("⚠️ Receiver has no FCM Token saved!");
     }
 

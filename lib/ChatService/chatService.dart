@@ -116,6 +116,31 @@ class ChatService {
           "publicId": publicId,
           'isAudioCall': isAudioCall,
         });
+    String lastMessagePreview;
+
+    switch (type) {
+      case 'text':
+        lastMessagePreview = message ?? '';
+        break;
+      case 'image':
+        lastMessagePreview = "📷 Image";
+        break;
+      case 'video':
+        lastMessagePreview = "🎥 Video";
+        break;
+      case 'document':
+        lastMessagePreview = "📄 Document";
+        break;
+      case 'call':
+        if (isAudioCall == true) {
+          lastMessagePreview = "📞 Audio Call";
+        } else {
+          lastMessagePreview = "🎥 Video Call";
+        }
+        break;
+      default:
+        lastMessagePreview = message ?? '';
+    }
 
     // Update chat room info
     await _firestore.collection('chat_rooms').doc(chatRoom).set({
@@ -133,7 +158,7 @@ class ChatService {
           'photoUrl': receiverDoc.data()?['photoUrl'],
         },
       },
-      'last_message': message ?? "📷 Image",
+      'last_message': lastMessagePreview,
       'last_message_sender_id': senderId,
       'last_message_timestamp': timestamp,
     }, SetOptions(merge: true));
