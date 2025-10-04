@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dio/dio.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
@@ -13,11 +14,13 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:web_socket_app/group_call_screen/group_call_screen.dart';
 import 'package:web_socket_app/model/message_model/message_model.dart';
 import 'package:web_socket_app/screen/camera/cameraScreen.dart';
 import 'package:web_socket_app/screen/photo_display_screen/photo_display_screen.dart';
 import 'package:web_socket_app/screen/video_display_screen/video_display_screen.dart';
 import 'package:web_socket_app/utils/color.dart';
+import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
 import '../ChatService/chatService.dart';
 import 'package:web_socket_app/main.dart';
 import 'package:flutter/foundation.dart' as foundation;
@@ -109,6 +112,7 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
+  // send message function
   Future<void> _sendMessage({String? text, String? imageUrl}) async {
     final String currentText = text ?? _textController.text.trim();
     if (currentText.isEmpty && (imageUrl == null || imageUrl.isEmpty)) {
@@ -138,10 +142,11 @@ class _ChatScreenState extends State<ChatScreen> {
       message: currentText.isNotEmpty ? currentText : null,
       imageUrl: imageUrl,
       repliedMessage: messageToReplay,
+      callRoomID: '',
     );
   }
 
-  // send file with image
+  // send file with image function
   Future<void> _sendFile() async {
     final pickedOption = await showModalBottomSheet<String>(
       backgroundColor: Colors.white,
@@ -257,6 +262,7 @@ class _ChatScreenState extends State<ChatScreen> {
           type: fileType,
           fileName: fileName,
           publicId: publicId,
+          callRoomID: '',
         );
       } else {
         print("$fileType upload failed with status: ${response.statusCode}");
@@ -270,7 +276,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // send camera image
+  // send camera image function
   Future<void> _sendCapturedImage(String imagePath) async {
     setState(() => _isUploading = true);
 
@@ -303,6 +309,7 @@ class _ChatScreenState extends State<ChatScreen> {
           imageUrl: imageUrl,
           type: "image",
           publicId: publicId,
+          callRoomID: '',
         );
       } else {
         print("Image upload failed with status: ${response.statusCode}");
@@ -314,7 +321,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  //send camera video
+  //send camera video function
   Future<void> _sendCapturedVideo(String videoPath) async {
     setState(() => _isUploading = true);
 
@@ -345,6 +352,7 @@ class _ChatScreenState extends State<ChatScreen> {
           imageUrl: videoUrl,
           type: "video",
           publicId: publicId,
+          callRoomID: '',
         );
       } else {
         print("Video upload failed: ${response.statusCode}");
@@ -356,7 +364,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // all message marks
+  // all message marks function
   Future<void> _markMessagesAsRead() async {
     final messagesRef = _firebaseFirestore
         .collection("chat_rooms")
@@ -377,6 +385,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  // typing listener function
   void _setupTypingListener() {
     final receiverTypingRef = _realtimeDatabase.ref(
       'chat_room_typing/$chatRoomId/${widget.receiverUserId}',
@@ -401,6 +410,7 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  // set typing status function
   void _setTypingStatus(bool isTyping) {
     _typingStatusRef
         ?.set({'isTyping': isTyping, 'timestamp': ServerValue.timestamp})
@@ -472,7 +482,7 @@ class _ChatScreenState extends State<ChatScreen> {
     FocusScope.of(context).requestFocus(_emojiFocusNode);
   }
 
-  //delete message
+  //delete message function
   Future<void> _deleteMessage(
     String messageId,
     String? imageUrl,
@@ -602,7 +612,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  //edit message
+  //edit message function
   Future<void> _editMessage(String messageId, String newText) async {
     try {
       await _firebaseFirestore
@@ -622,7 +632,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  //fetch receiver photo
+  //fetch receiver photo function
   Future<void> _fetchReceiverPhotoUrl() async {
     try {
       DocumentSnapshot userDoc = await _firebaseFirestore
@@ -642,7 +652,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // get receiver ReceiverEmail
+  // get receiver ReceiverEmail function
   String _getTruncatedReceiverEmail(String email) {
     const String targetString = "mdrakibdeveloper";
     const int maxDisplayLength = targetString.length;
@@ -670,7 +680,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return null;
   }
 
-  // get receiver profile photo
+  // get receiver profile photo function
   Future<String> getReceiverPhoto(String userID) async {
     final doc = await FirebaseFirestore.instance
         .collection('users')
@@ -700,6 +710,7 @@ class _ChatScreenState extends State<ChatScreen> {
       message: isAudio ? "📞 Audio Call" : "🎥 Video Call",
       type: "call",
       isAudioCall: isAudio,
+      callRoomID: '',
     );
 
     // Create Firestore call document
@@ -713,36 +724,13 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     print("✅ Firestore call doc created with status=calling");
 
-    // Send push notification to callee
-    final fcmToken = await _getReceiverFcmToken(widget.receiverID);
-    if (fcmToken != null) {
-      await NotificationHandler(context).sendCallNotification(
-        fcmToken: fcmToken,
-        title: "Incoming ${isAudio ? 'Audio' : 'Video'} Call",
-        body: "From ${currentUser.email ?? currentUser.uid}",
-        senderId: currentUser.uid,
-        senderEmail: currentUser.email ?? currentUser.uid,
-        channelName: callID,
-        callType: isAudio ? "audio" : "video",
-        notificationType: "call",
-      );
-    } else {
-      print("⚠️ Receiver has no FCM Token saved!");
-    }
-
-    // Navigate directly to CallPage
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CallPage(
-          callerID: currentUser.uid,
-          callerName: currentUser.email ?? currentUser.uid,
-          calleeID: widget.receiverID,
-          callID: callID,
-          isAudioCall: isAudio,
-          isCaller: true,
-        ),
-      ),
+    ZegoUIKitPrebuiltCallInvitationService().send(
+      invitees: [ZegoCallUser(widget.receiverID, widget.receiverEmail)],
+      isVideoCall: !isAudio,
+      customData: callID,
+      timeoutSeconds: 60,
+      notificationTitle: "Incoming ${isAudio ? 'Audio' : 'Video'} Call",
+      notificationMessage: "From ${currentUser.email ?? currentUser.uid}",
     );
   }
 
@@ -754,6 +742,7 @@ class _ChatScreenState extends State<ChatScreen> {
         automaticallyImplyLeading: false,
         backgroundColor: AppColor.primaryColor,
         title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             GestureDetector(
               onTap: () {
@@ -795,15 +784,41 @@ class _ChatScreenState extends State<ChatScreen> {
               icon: Icon(Icons.call, color: Colors.white),
             ),
 
-            SizedBox(width: 20),
             //video call
             IconButton(
+              style: IconButton.styleFrom(fixedSize: const Size(48, 48)),
               onPressed: () async {
                 final currentUser = FirebaseAuth.instance.currentUser;
                 if (currentUser == null) return;
                 await _startCall(isAudio: false);
               },
               icon: Icon(Icons.video_call, color: Colors.white),
+            ),
+
+            //group call button
+            IconButton(
+              onPressed: () {
+                final currentUser = FirebaseAuth.instance.currentUser;
+                if (currentUser == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('No User Login')),
+                  );
+                  return;
+                }
+                final String currentUserID = currentUser.uid;
+                final String currentUserName =
+                    currentUser.email ?? currentUser.uid;
+                final String roomID =
+                    'group_call_${DateTime.now().millisecondsSinceEpoch}';
+
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => GroupCallSelectionScreen(),
+                  ),
+                );
+              },
+              icon: Icon(Icons.group, color: Colors.white),
             ),
           ],
         ),
@@ -1345,6 +1360,7 @@ class _ChatScreenState extends State<ChatScreen> {
       color: Colors.white,
       child: Row(
         children: [
+          // camera button
           IconButton(
             icon: Icon(Icons.photo_camera, color: AppColor.primaryColor),
             onPressed: () async {
@@ -1378,6 +1394,8 @@ class _ChatScreenState extends State<ChatScreen> {
               }
             },
           ),
+
+          // file button
           IconButton(
             icon: Icon(
               Icons.attach_file_outlined,
@@ -1443,6 +1461,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
           SizedBox(width: 8.0),
+          // send button
           GestureDetector(
             onTap: _isUploading
                 ? null

@@ -100,18 +100,18 @@ class CallHandler {
         .get()
         .then((doc) => doc.data()?['fcmToken']);
 
-    if (token != null) {
-      await NotificationHandler(context).sendCallNotification(
-        fcmToken: token,
-        title: "Incoming ${isAudio ? 'Audio' : 'Video'} Call",
-        body: "From ${currentUser.email ?? currentUser.uid}",
-        senderId: currentUser.uid,
-        senderEmail: currentUser.email ?? currentUser.uid,
-        channelName: callID,
-        callType: isAudio ? "audio" : "video",
-        notificationType: 'call',
-      );
-    }
+    // if (token != null) {
+    //   await NotificationHandler(context).sendCallNotification(
+    //     fcmToken: token,
+    //     title: "Incoming ${isAudio ? 'Audio' : 'Video'} Call",
+    //     body: "From ${currentUser.email ?? currentUser.uid}",
+    //     senderId: currentUser.uid,
+    //     senderEmail: currentUser.email ?? currentUser.uid,
+    //     channelName: callID,
+    //     callType: isAudio ? "audio" : "video",
+    //     notificationType: 'call',
+    //   );
+    // }
 
     /// Check if CallPage already exists
     if (ModalRoute.of(context)?.settings.name != "/call") {

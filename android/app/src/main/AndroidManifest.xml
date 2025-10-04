@@ -11,6 +11,12 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY"/>
 
     <queries>
         <!-- For launching general web URLs -->
@@ -42,13 +48,47 @@
         android:label="web_socket_app"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        android:requestLegacyExternalStorage="true"
+        android:foregroundServiceType="phoneCall">
+        <!-- ZegoCloud Call Notification Configuration -->
+        <meta-data
+            android:name="com.zego.prebuilt_call.foreground_service_notification_id"
+            android:value="1001" />
+        <meta-data
+            android:name="com.zego.prebuilt_call.foreground_service_notification_channel_id"
+            android:value="call_channel" /> <!-- আপনার Flutter local notification এর চ্যানেল ID ব্যবহার করুন -->
+        <meta-data
+            android:name="com.zego.prebuilt_call.foreground_service_notification_channel_name"
+            android:value="Incoming Calls" /> <!-- আপনার Flutter local notification এর চ্যানেল Name ব্যবহার করুন -->
+        <meta-data
+            android:name="com.zego.prebuilt_call.foreground_service_notification_content"
+            android:value="Ongoing call..." />
+        <meta-data
+            android:name="com.zego.prebuilt_call.full_screen_intent_activity"
+            android:value="com.zegocloud.uikit.prebuilt.call.ZegoUIKitPrebuiltCallActivity" />
+
+
+        <service
+            android:name="com.zegocloud.uikit.prebuilt.call.foreground.ZegoCallForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="phoneCall" />
+
+        <!-- Zego's Call Activity -->
+        <activity
+            android:name="com.zegocloud.uikit.prebuilt.call.ZegoUIKitPrebuiltCallActivity"
+            android:theme="@style/Theme.AppCompat.NoActionBar"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|fontScale|layoutDirection|density"
+            android:exported="true" />
+
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="high_importance_channel" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleInstance"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"

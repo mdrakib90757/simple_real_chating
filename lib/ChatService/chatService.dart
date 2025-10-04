@@ -66,6 +66,7 @@ class ChatService {
     RepliedMessageInfo? repliedMessage,
     String? fileName,
     String? publicId,
+    required String? callRoomID,
   }) async {
     final receiverDoc = await _firestore
         .collection('users')
@@ -115,6 +116,7 @@ class ChatService {
           'fileName': fileName,
           "publicId": publicId,
           'isAudioCall': isAudioCall,
+          "callRoomID": callRoomID,
         });
     String lastMessagePreview;
 

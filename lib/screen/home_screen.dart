@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:web_socket_app/group_call_screen/group_call_screen.dart';
 import 'package:web_socket_app/screen/profileEditScreen/profileEditScreen.dart';
 import 'package:web_socket_app/utils/color.dart';
 import '../widgets/custom_search_delegate/custom_search_delegate.dart';
@@ -132,6 +133,30 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
               ),
+            ),
+
+            IconButton(
+              onPressed: () {
+
+                final currentUser = FirebaseAuth.instance.currentUser;
+                if (currentUser == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('No User Login')),
+                  );
+                  return;
+                }
+                final String currentUserID = currentUser.uid;
+                final String currentUserName = currentUser.email ?? currentUser.uid;
+                final String roomID = 'group_call_${DateTime.now().millisecondsSinceEpoch}';
+
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => GroupCallSelectionScreen()
+                  ),
+                );
+              },
+              icon: Icon(Icons.group, color: Colors.white),
             ),
           ],
         ),
@@ -472,7 +497,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return Center(
-            // <--- No Expanded here
             child: CircularProgressIndicator(color: AppColor.primaryColor),
           );
         }

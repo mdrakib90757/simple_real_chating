@@ -4,6 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:googleapis_auth/auth_io.dart';
+import 'package:web_socket_app/utils/setting/setting.dart';
 
 class NotificationHandler {
   final BuildContext context;
@@ -55,6 +56,7 @@ class NotificationHandler {
           'click_action': 'FLUTTER_NOTIFICATION_CLICK',
           'senderID': senderId,
           'senderEmail': senderEmail,
+          'notificationType': 'chat',
         },
         'android': {
           'priority': 'high',
@@ -96,7 +98,6 @@ class NotificationHandler {
   }
 
   // Call Notification Sender
-  // Call Notification Sender
   Future<void> sendCallNotification({
     required String fcmToken,
     required String title,
@@ -106,26 +107,72 @@ class NotificationHandler {
     required String channelName,
     required String callType,
     required String notificationType, // "Audio" or "Video"
+    required String receiverId,
+    List<String> inviteeIDs = const [],
   }) async {
+    String? fcmToken = await _getRecipientFCMToken(receiverId);
+
+    if (fcmToken == null) {
+      print(
+        "Recipient $receiverId has no valid FCM token. Cannot send notification.",
+      );
+      return; // Exit if no token is found
+    }
+
+    final int zegoCallTypeInt = (callType.toLowerCase() == "video") ? 1 : 0;
+    final int zegoInvitationType = inviteeIDs.length > 1 ? 2 : 1;
+
+    // Define Zego specific data based on their documentation
+    // This is the structure Zego SDK looks for when handling FCM messages.
+    final Map<String, dynamic> zegoDataForFCM = {
+      "callID": channelName,
+      "inviterID": senderId,
+      "inviterName": senderEmail,
+      "invitees": inviteeIDs
+          .map((id) => {"user_id": id, "user_name": ""})
+          .toList(), // Zego often expects invitees as a list of maps
+      "callType": zegoCallTypeInt,
+      "type": zegoInvitationType,
+      "customData": {
+        "notificationType": notificationType,
+        "senderEmail": senderEmail,
+        "senderId": senderId,
+        "channelName": channelName,
+        "callTypeString": callType,
+      },
+    };
+
     final Map<String, dynamic> payload = {
       'message': {
         'token': fcmToken,
         'notification': {'title': title, 'body': body},
         'data': {
-          'click_action': 'FLUTTER_NOTIFICATION_CLICK', // Ensure this is set
+          // Your custom data for Flutter app to process
           'senderID': senderId,
           'senderEmail': senderEmail,
           'channelName': channelName,
-          'callType': callType, // This is key for differentiation
-          'notificationType': 'call', // Add a type to differentiate from chat
+          'callType': callType, // Original string type
+          'notificationType': notificationType,
+          'zego': jsonEncode(
+            zegoDataForFCM,
+          ), // Encode Zego's specific data as a JSON string
+          'zego_call_id': channelName,
+          'zego_inviter_id': senderId,
+          'zego_inviter_name': senderEmail,
+          'zego_type': zegoCallTypeInt.toString(),
+          'zego_invitation_type': zegoInvitationType
+              .toString(), // Add invitation type
+          'zego_platform': 'android', // or 'ios'
+          'invitees': jsonEncode(inviteeIDs),
         },
         'android': {
           'priority': 'high',
           'notification': {
-            'channel_id': 'high_importance_channel',
-            'sound':
-                'sound.mp3', // Make sure this path is correct relative to raw/
+            'channel_id': 'call_channel', // Use your dedicated call channel
+            'sound': 'ringtone',
             'tag': 'call_${channelName}',
+            'full_screen_intent': true, // Essential for Android 10+
+            'category': 'call', // Important for Android to treat it as a call
           },
         },
         'apns': {
@@ -140,7 +187,9 @@ class NotificationHandler {
             'senderEmail': senderEmail,
             'channelName': channelName,
             'callType': callType,
-            'notificationType': 'call',
+            'notificationType': notificationType,
+            'zego': zegoDataForFCM, // For iOS, send the object directly
+            'invitees': inviteeIDs,
           },
         },
       },
@@ -151,7 +200,6 @@ class NotificationHandler {
     print(encodedPayload);
 
     try {
-      // IMPORTANT: Implement _getAccessToken securely. This placeholder is for development only.
       final accessToken = await _getAccessToken();
       final projectId =
           "real-time-messaging-9b660"; // Replace with your project ID
@@ -175,6 +223,16 @@ class NotificationHandler {
           "Failed to send $callType call notification. Status code: ${response.statusCode}",
         );
         print("FCM Error Body: ${response.body}");
+        if (response.body.contains("UNREGISTERED") ||
+            response.body.contains("InvalidRegistrationToken")) {
+          print("Removing UNREGISTERED token for user: $receiverId");
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(receiverId)
+              .update({
+                'fcmToken': FieldValue.delete(), // Remove the invalid token
+              });
+        }
       }
     } catch (e) {
       print("Error sending $callType call notification: $e");
@@ -190,4 +248,21 @@ Future<void> sendCallCancelledNotification(
   await FirebaseFirestore.instance.collection('calls').doc(callID).set({
     'status': 'cancelled',
   }, SetOptions(merge: true));
+}
+
+// Helper function to get recipient's FCM token
+Future<String?> _getRecipientFCMToken(String recipientId) async {
+  try {
+    DocumentSnapshot userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(recipientId)
+        .get();
+    if (userDoc.exists && userDoc.data() != null) {
+      Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+      return userData['fcmToken'] as String?;
+    }
+  } catch (e) {
+    print('Error getting recipient FCM token: $e');
+  }
+  return null;
 }
