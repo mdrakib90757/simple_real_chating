@@ -320,8 +320,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       child: StreamBuilder(
         stream: _firebaseDatabase.ref('presence').onValue,
         builder: (context, AsyncSnapshot<DatabaseEvent> presenceSnapshot) {
-          if (!presenceSnapshot.hasData ||
-              presenceSnapshot.data?.snapshot.value == null) {
+          if (!presenceSnapshot.hasData || presenceSnapshot.data?.snapshot.value == null) {
             return Center(child: Text("Loading users..."));
           }
 
@@ -341,7 +340,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             stream: FirebaseFirestore.instance.collection('users').snapshots(),
             builder: (context, userSnapshot) {
               if (!userSnapshot.hasData || userSnapshot.data!.docs.isEmpty) {
-                return Center(child: Text("No user data"));
+                return Center(child: Text("No user data available"));
               }
 
               final allUsers = userSnapshot.data!.docs.map((doc) {
@@ -374,14 +373,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               for (var user in allUsers) {
                 final String uid = user['uid'];
                 final userPresence = presenceData[uid];
-                final bool isOnline = userPresence?['isOnline'] == true;
-                final int? lastSeenTimestamp = userPresence?['last_seen'];
 
-                usersWithStatus.add({
-                  ...user,
-                  'isOnline': isOnline,
-                  'last_seen': lastSeenTimestamp,
-                });
+                // Only include users who have a presence record or are the current user
+                // and whose email is not null/empty (basic validation)
+                if ((userPresence != null || uid == currentUser.uid) && (user['email'] as String).isNotEmpty) {
+                  final bool isOnline = userPresence?['isOnline'] == true;
+                  final int? lastSeenTimestamp = userPresence?['last_seen'];
+
+                  usersWithStatus.add({
+                    ...user,
+                    'isOnline': isOnline,
+                    'last_seen': lastSeenTimestamp,
+                  });
+                }
               }
 
               // Sort users: current user first, then truly online users, then offline users by last_seen
@@ -391,20 +395,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 if (b['uid'] == currentUser.uid) return 1;
 
                 // Online users before offline users
-                if (a['isOnline'] && !b['isOnline']) return -1;
-                if (!a['isOnline'] && b['isOnline']) return 1;
+                final bool aIsOnline = a['isOnline'];
+                final bool bIsOnline = b['isOnline'];
+
+                if (aIsOnline && !bIsOnline) return -1;
+                if (!aIsOnline && bIsOnline) return 1;
 
                 // If both are online or both are offline, sort by last_seen (most recent first)
                 final int? aLastSeen = a['last_seen'];
                 final int? bLastSeen = b['last_seen'];
+
                 if (aLastSeen == null && bLastSeen == null) return 0;
-                if (aLastSeen == null)
-                  return 1; // Put users without last_seen at the end
+                if (aLastSeen == null) return 1; // Put users without last_seen at the end
                 if (bLastSeen == null) return -1;
-                return bLastSeen.compareTo(
-                  aLastSeen,
-                ); // Descending order (most recent first)
+                return bLastSeen.compareTo(aLastSeen); // Descending order (most recent first)
               });
+
 
               return ListView.builder(
                 scrollDirection: Axis.horizontal,
@@ -421,20 +427,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
                   String statusText = '';
                   if (isCurrentUser) {
-                    statusText = "You";
+                    statusText = _isDeviceConnected ? "Online" : "You";
                   } else if (isUserOnline) {
                     statusText = "Online";
                   } else if (lastSeenMillis != null) {
-                    final DateTime lastSeenTime =
-                        DateTime.fromMillisecondsSinceEpoch(lastSeenMillis);
-                    final Duration difference = DateTime.now().difference(
-                      lastSeenTime,
-                    );
+                    final DateTime lastSeenTime = DateTime.fromMillisecondsSinceEpoch(lastSeenMillis);
+                    final Duration difference = DateTime.now().difference(lastSeenTime);
 
                     if (difference.inDays > 0) {
-                      statusText = DateFormat.MMMd().add_jm().format(
-                        lastSeenTime,
-                      ); // e.g., "Oct 26, 10:30 AM"
+                      statusText = DateFormat.MMMd().add_jm().format(lastSeenTime); // e.g., "Oct 26, 10:30 AM"
                     } else if (difference.inHours > 0) {
                       statusText = "${difference.inHours}h ago";
                     } else if (difference.inMinutes > 0) {
@@ -445,6 +446,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   } else {
                     statusText = "Offline"; // Fallback if no last_seen
                   }
+
 
                   return GestureDetector(
                     onTap: () async {
@@ -586,279 +588,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     );
   }
-
-  // Widget buildChatList() {
-  //   // final String currentUserId = currentUser.uid;
-  //   //
-  //   // return StreamBuilder<List<DocumentSnapshot>>(
-  //   //   stream: _combinedChatAndGroupStreams(currentUserId),
-  //   //   builder: (context, snapshot) {
-  //   //     if (!snapshot.hasData) {
-  //   //       return Center(
-  //   //         child: CircularProgressIndicator(color: AppColor.primaryColor),
-  //   //       );
-  //   //     }
-  //   //
-  //   //     final combinedDocs = snapshot.data!;
-  //   //
-  //   //     if (combinedDocs.isEmpty) {
-  //   //       return Center(
-  //   //         child: Column(
-  //   //           mainAxisAlignment: MainAxisAlignment.center,
-  //   //           children: [
-  //   //             Icon(
-  //   //               Icons.chat_bubble_outline,
-  //   //               size: 80,
-  //   //               color: Colors.grey[200],
-  //   //             ),
-  //   //             const SizedBox(height: 16),
-  //   //             Text(
-  //   //               "Welcome to the Chat App!",
-  //   //               style: TextStyle(fontSize: 18, color: Colors.grey[700]),
-  //   //             ),
-  //   //             const SizedBox(height: 8),
-  //   //             Text(
-  //   //               "Start a conversation or create a group.",
-  //   //               style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-  //   //             ),
-  //   //           ],
-  //   //         ),
-  //   //       );
-  //   //     }
-  //
-  //
-  //   final String currentUserId = currentUser.uid;
-  //
-  //   return StreamBuilder<Map<String, dynamic>>( // Use the new combined stream type
-  //     stream: _combinedDataStream(currentUserId), // Call the new combined stream
-  //     builder: (context, snapshot) {
-  //       if (!snapshot.hasData) {
-  //         return Center(
-  //           child: CircularProgressIndicator(color: AppColor.primaryColor),
-  //         );
-  //       }
-  //
-  //       final List<DocumentSnapshot> combinedDocs = snapshot.data!['combinedDocs'];
-  //       final Map<String, dynamic> presenceData = snapshot.data!['presenceData'];
-  //
-  //       if (combinedDocs.isEmpty) {
-  //         return Center(
-  //           child: Column(
-  //             mainAxisAlignment: MainAxisAlignment.center,
-  //             children: [
-  //               Icon(
-  //                 Icons.chat_bubble_outline,
-  //                 size: 80,
-  //                 color: Colors.grey[200],
-  //               ),
-  //               const SizedBox(height: 16),
-  //               Text(
-  //                 "Welcome to the Chat App!",
-  //                 style: TextStyle(fontSize: 18, color: Colors.grey[700]),
-  //               ),
-  //               const SizedBox(height: 8),
-  //               Text(
-  //                 "Start a conversation or create a group.",
-  //                 style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-  //               ),
-  //             ],
-  //           ),
-  //         );
-  //       }
-  //
-  //
-  //
-  //
-  //       return ListView.builder(
-  //         shrinkWrap: true,
-  //         physics: NeverScrollableScrollPhysics(),
-  //         itemCount: combinedDocs.length,
-  //         itemBuilder: (context, index) {
-  //           final doc = combinedDocs[index];
-  //           final data = doc.data() as Map<String, dynamic>;
-  //
-  //           if (doc.reference.parent!.id == 'chat_rooms') {
-  //             // This is a one-on-one chat
-  //             final List<String> participants = List.from(data['participants']);
-  //             final String otherUserId = participants.firstWhere(
-  //               (id) => id != currentUserId,
-  //               orElse: () => '',
-  //             );
-  //
-  //             if (otherUserId.isEmpty) return const SizedBox.shrink();
-  //
-  //             final Map<String, dynamic> otherUserInfo =
-  //                 data['participant_info'][otherUserId] ?? {};
-  //             final String otherUserEmail =
-  //                 (otherUserInfo['email'] ?? '').isNotEmpty
-  //                 ? otherUserInfo['email']
-  //                 : 'Unknown User';
-  //             final String? otherUserPhotoUrl = otherUserInfo['photoUrl'];
-  //
-  //             final Timestamp? lastMessageTimestamp =
-  //                 data['last_message_timestamp'] as Timestamp?;
-  //             final DateTime? lastMessageTime = lastMessageTimestamp?.toDate();
-  //             final String formattedTime = lastMessageTime != null
-  //                 ? "${lastMessageTime.hour}:${lastMessageTime.minute.toString().padLeft(2, '0')}"
-  //                 : '';
-  //
-  //
-  //             // Get presence data for the other user
-  //             final userPresence = presenceData[otherUserId];
-  //             final bool isUserOnline = userPresence?['isOnline'] == true;
-  //             final int? lastSeenMillis = userPresence?['last_seen'];
-  //
-  //             String onlineStatusText = '';
-  //             if (isUserOnline) {
-  //               onlineStatusText = "Online";
-  //             } else if (lastSeenMillis != null) {
-  //               final DateTime lastSeenTime = DateTime.fromMillisecondsSinceEpoch(lastSeenMillis);
-  //               final Duration difference = DateTime.now().difference(lastSeenTime);
-  //
-  //               if (difference.inDays > 0) {
-  //                 onlineStatusText = "Last seen ${DateFormat.MMMd().add_jm().format(lastSeenTime)}"; // e.g., "Last seen Oct 26, 10:30 AM"
-  //               } else if (difference.inHours > 0) {
-  //                 onlineStatusText = "Last seen ${difference.inHours}h ago";
-  //               } else if (difference.inMinutes > 0) {
-  //                 onlineStatusText = "Last seen ${difference.inMinutes}m ago";
-  //               } else {
-  //                 onlineStatusText = "Last seen just now";
-  //               }
-  //             } else {
-  //               onlineStatusText = "Offline"; // Fallback if no last_seen
-  //             }
-  //
-  //
-  //             return ListTile(
-  //               contentPadding: const EdgeInsets.symmetric(
-  //                 horizontal: 16.0,
-  //                 vertical: 8.0,
-  //               ),
-  //               leading: CircleAvatar(
-  //                 radius: 25,
-  //                 backgroundColor: AppColor.primaryColor,
-  //                 backgroundImage:
-  //                     (otherUserPhotoUrl != null &&
-  //                         otherUserPhotoUrl.isNotEmpty)
-  //                     ? NetworkImage(otherUserPhotoUrl)
-  //                     : null,
-  //                 child:
-  //                     (otherUserPhotoUrl == null || otherUserPhotoUrl.isEmpty)
-  //                     ? Icon(Icons.person, size: 25, color: Colors.white)
-  //                     : null,
-  //               ),
-  //
-  //                 if (isUserOnline) // Green dot for online status
-  //             Positioned(
-  //               bottom: 0,
-  //               right: 0,
-  //               child: Container(
-  //                 width: 12,
-  //                 height: 12,
-  //                 decoration: BoxDecoration(
-  //                   color: Colors.green,
-  //                   shape: BoxShape.circle,
-  //                   border: Border.all(
-  //                     color: Colors.white,
-  //                     width: 2,
-  //                   ),
-  //                 ),
-  //               ),
-  //             ),
-  //           ],
-  //           )
-  //               title: Text(
-  //                 otherUserEmail.split('@')[0],
-  //                 style: const TextStyle(fontWeight: FontWeight.bold),
-  //               ),
-  //               subtitle: Text(
-  //                 data['last_message'] ?? '',
-  //                 maxLines: 1,
-  //                 overflow: TextOverflow.ellipsis,
-  //               ),
-  //               trailing: Text(
-  //                 formattedTime,
-  //                 style: const TextStyle(fontSize: 12, color: Colors.grey),
-  //               ),
-  //               onTap: () {
-  //                 Navigator.push(
-  //                   context,
-  //                   MaterialPageRoute(
-  //                     builder: (_) => ChatScreen(
-  //                       currentUserEmail:
-  //                           FirebaseAuth.instance.currentUser!.email!,
-  //                       receiverEmail: otherUserEmail,
-  //                       receiverID: otherUserId,
-  //                       currentUserId: currentUserId,
-  //                       receiverUserId: otherUserId,
-  //                     ),
-  //                   ),
-  //                 );
-  //               },
-  //             );
-  //
-  //           } else if (doc.reference.parent!.id == 'groups') {
-  //             // This is a group chat
-  //             final Group group = Group.fromFirestore(doc);
-  //             final DateTime? lastMessageTime = group.lastMessageTimestamp
-  //                 ?.toDate();
-  //             final String formattedTime = lastMessageTime != null
-  //                 ? "${lastMessageTime.hour}:${lastMessageTime.minute.toString().padLeft(2, '0')}"
-  //                 : '';
-  //             final String? groupPhotoURL = data['groupPhotoURL'] as String?;
-  //             return ListTile(
-  //               contentPadding: const EdgeInsets.symmetric(
-  //                 horizontal: 16.0,
-  //                 vertical: 8.0,
-  //               ),
-  //               leading: CircleAvatar(
-  //                 radius: 25,
-  //                 backgroundColor: AppColor.primaryColor,
-  //                 // Use NetworkImage if groupPhotoURL is available and not empty
-  //                 backgroundImage: (groupPhotoURL != null && groupPhotoURL.isNotEmpty)
-  //                     ? NetworkImage(groupPhotoURL) as ImageProvider<Object>?
-  //                     : null, // Otherwise, it will fallback to the child icon
-  //                 child: (groupPhotoURL == null || groupPhotoURL.isEmpty)
-  //                     ? const Icon(Icons.group, size: 25, color: Colors.white)
-  //                     : null, // Show default icon only if no photo URL
-  //
-  //               ),
-  //               title: Text(
-  //                 group.name,
-  //                 style: const TextStyle(fontWeight: FontWeight.bold),
-  //               ),
-  //               subtitle: Text(
-  //                 group.lastMessage ?? 'No messages yet',
-  //                 maxLines: 1,
-  //                 overflow: TextOverflow.ellipsis,
-  //               ),
-  //               trailing: Text(
-  //                 formattedTime,
-  //                 style: const TextStyle(fontSize: 12, color: Colors.grey),
-  //               ),
-  //               onTap: () {
-  //                 Navigator.push(
-  //                   context,
-  //                   MaterialPageRoute(
-  //                     builder: (_) => GroupChatScreen(
-  //                       groupId: group.id,
-  //                       groupName: group.name,
-  //                       currentUserId: currentUserId,
-  //                       groupMemberIds: [],
-  //                     ),
-  //                   ),
-  //                 );
-  //               },
-  //             );
-  //           }
-  //           return const SizedBox.shrink(); // Should not happen
-  //         },
-  //       );
-  //     },
-  //   );
-  // }
-
-  // Modify _combinedChatAndGroupStreams to also return presence data
 
   Widget buildChatList() {
     final String currentUserId = currentUser.uid;
