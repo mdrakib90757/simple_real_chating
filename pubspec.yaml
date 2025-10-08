@@ -65,6 +65,10 @@ dependencies:
   flutter_callkit_incoming:
   zego_zpns: ^2.8.0
   zego_zimkit: ^1.19.6
+  shared_preferences: ^2.5.3
+  rxdart: ^0.28.0
+  connectivity_plus:
+  intl:
 
 
 

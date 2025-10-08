@@ -206,6 +206,7 @@ class _CameraScreenState extends State<CameraScreen> {
   Widget build(BuildContext context) {
     if (_initializeControllerFuture == null || _controller == null) {
       return Scaffold(
+        backgroundColor: Colors.white,
         appBar: AppBar(
           leading: IconButton(
             onPressed: () {

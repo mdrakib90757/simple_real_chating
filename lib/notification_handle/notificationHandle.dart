@@ -29,6 +29,18 @@ class NotificationHandler {
     "universe_domain": "googleapis.com",
   };
 
+  // Static method for access token
+  static Future<String> getAccessTokenStatic() async {
+    final accountCredentials = ServiceAccountCredentials.fromJson(
+      _serviceAccountJson,
+    );
+    final scopes = ['https://www.googleapis.com/auth/firebase.messaging'];
+    final client = await clientViaServiceAccount(accountCredentials, scopes);
+    final token = client.credentials.accessToken.data;
+    client.close();
+    return token;
+  }
+
   Future<String> _getAccessToken() async {
     final accountCredentials = ServiceAccountCredentials.fromJson(
       _serviceAccountJson,
@@ -51,16 +63,14 @@ class NotificationHandler {
     final Map<String, dynamic> payload = {
       'message': {
         'token': fcmToken,
-        'notification': {'title': title, 'body': body},
+        //'notification': {'title': title, 'body': body},
         'data': {
           'click_action': 'FLUTTER_NOTIFICATION_CLICK',
           'senderID': senderId,
           'senderEmail': senderEmail,
           'notificationType': 'chat',
-        },
-        'android': {
-          'priority': 'high',
-          'notification': {'channel_id': 'high_importance_channel'},
+          'title': title,
+          'body': body,
         },
       },
     };
@@ -74,7 +84,6 @@ class NotificationHandler {
       final url = Uri.parse(
         'https://fcm.googleapis.com/v1/projects/$projectId/messages:send',
       );
-
       final response = await http.post(
         url,
         headers: {
@@ -106,7 +115,7 @@ class NotificationHandler {
     required String senderEmail,
     required String channelName,
     required String callType,
-    required String notificationType, // "Audio" or "Video"
+    required String notificationType,
     required String receiverId,
     List<String> inviteeIDs = const [],
   }) async {
@@ -116,14 +125,12 @@ class NotificationHandler {
       print(
         "Recipient $receiverId has no valid FCM token. Cannot send notification.",
       );
-      return; // Exit if no token is found
+      return;
     }
 
     final int zegoCallTypeInt = (callType.toLowerCase() == "video") ? 1 : 0;
     final int zegoInvitationType = inviteeIDs.length > 1 ? 2 : 1;
 
-    // Define Zego specific data based on their documentation
-    // This is the structure Zego SDK looks for when handling FCM messages.
     final Map<String, dynamic> zegoDataForFCM = {
       "callID": channelName,
       "inviterID": senderId,
@@ -145,12 +152,14 @@ class NotificationHandler {
     final Map<String, dynamic> payload = {
       'message': {
         'token': fcmToken,
-        'notification': {'title': title, 'body': body},
+        //'notification': {'title': title, 'body': body},
         'data': {
           // Your custom data for Flutter app to process
           'senderID': senderId,
           'senderEmail': senderEmail,
           'channelName': channelName,
+          //  'title': title,
+          // 'body': body,
           'callType': callType, // Original string type
           'notificationType': notificationType,
           'zego': jsonEncode(
@@ -167,13 +176,12 @@ class NotificationHandler {
         },
         'android': {
           'priority': 'high',
-          'notification': {
-            'channel_id': 'call_channel', // Use your dedicated call channel
-            'sound': 'ringtone',
-            'tag': 'call_${channelName}',
-            'full_screen_intent': true, // Essential for Android 10+
-            'category': 'call', // Important for Android to treat it as a call
-          },
+          // 'notification': {
+          //   'channel_id': 'call_channel', // Use your dedicated call channel
+          //   'sound': 'ringtone',
+          //   'tag': 'call_${channelName}',
+          //
+          // },
         },
         'apns': {
           // For iOS notifications - you'd likely need CallKit for full screen
@@ -238,6 +246,122 @@ class NotificationHandler {
       print("Error sending $callType call notification: $e");
     }
   }
+
+  // Group Call Notification Sender
+  Future<void> sendGroupCallNotification({
+    required String fcmToken,
+    required String title,
+    required String body,
+    required String senderId,
+    required String senderEmail,
+    required String channelName,
+    required String callType,
+    required List<String> inviteeIDs,
+    required String notificationType,
+    required String receiverId,
+  }) async {
+    if (inviteeIDs.isEmpty) return;
+
+    final int zegoCallTypeInt = (callType.toLowerCase() == "video") ? 1 : 0;
+    final int zegoInvitationType = 2; // Always group call
+
+    // Loop through invitees to get their FCM tokens
+    for (String receiverId in inviteeIDs) {
+      String? fcmToken = await _getRecipientFCMToken(receiverId);
+      if (fcmToken == null) {
+        print("Recipient $receiverId has no valid FCM token. Skipping...");
+        continue;
+      }
+
+      final Map<String, dynamic> zegoDataForFCM = {
+        "callID": channelName,
+        "inviterID": senderId,
+        "inviterName": senderEmail,
+        "invitees": inviteeIDs
+            .map((id) => {"user_id": id, "user_name": ""})
+            .toList(),
+        "callType": zegoCallTypeInt,
+        "type": zegoInvitationType,
+        "customData": {
+          "notificationType": "group_call",
+          "senderEmail": senderEmail,
+          "senderId": senderId,
+          "channelName": channelName,
+          "callTypeString": callType,
+        },
+      };
+
+      final Map<String, dynamic> payload = {
+        'message': {
+          'token': fcmToken,
+          'data': {
+            'senderID': senderId,
+            'senderEmail': senderEmail,
+            'channelName': channelName,
+            'callType': callType,
+            'notificationType': 'group_call',
+            'zego': jsonEncode(zegoDataForFCM),
+            'zego_call_id': channelName,
+            'zego_inviter_id': senderId,
+            'zego_inviter_name': senderEmail,
+            'zego_type': zegoCallTypeInt.toString(),
+            'zego_invitation_type': zegoInvitationType.toString(),
+            'zego_platform': 'android',
+            'invitees': jsonEncode(inviteeIDs),
+          },
+          'android': {'priority': 'high'},
+          'apns': {
+            'headers': {'apns-priority': '10', 'apns-push-type': 'alert'},
+            'payload': {
+              'aps': {
+                'alert': {'title': title, 'body': body},
+                'sound': 'incoming_call.wav',
+              },
+              'senderID': senderId,
+              'senderEmail': senderEmail,
+              'channelName': channelName,
+              'callType': callType,
+              'notificationType': 'group_call',
+              'zego': zegoDataForFCM,
+              'invitees': inviteeIDs,
+            },
+          },
+        },
+      };
+
+      final String encodedPayload = jsonEncode(payload);
+      print("Sending Group Call FCM Payload to $receiverId");
+      print(encodedPayload);
+
+      try {
+        final accessToken = await NotificationHandler.getAccessTokenStatic();
+        final projectId = "real-time-messaging-9b660";
+        final url = Uri.parse(
+          'https://fcm.googleapis.com/v1/projects/$projectId/messages:send',
+        );
+
+        final response = await http.post(
+          url,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $accessToken',
+          },
+          body: encodedPayload,
+        );
+
+        if (response.statusCode == 200) {
+          print("Group call notification sent successfully to $receiverId!");
+        } else {
+          print(
+            "Failed to send group call notification to $receiverId. Status: ${response.statusCode}",
+          );
+          print("FCM Error Body: ${response.body}");
+        }
+      } catch (e) {
+        print("Error sending group call notification to $receiverId: $e");
+      }
+    }
+  }
 }
 
 // Call Cancelled Notification
@@ -265,4 +389,18 @@ Future<String?> _getRecipientFCMToken(String recipientId) async {
     print('Error getting recipient FCM token: $e');
   }
   return null;
+}
+
+// Add a static version of _getAccessToken to call from static context
+extension NotificationHandlerStatic on NotificationHandler {
+  static Future<String> _getAccessTokenStatic() async {
+    final accountCredentials = ServiceAccountCredentials.fromJson(
+      NotificationHandler._serviceAccountJson,
+    );
+    final scopes = ['https://www.googleapis.com/auth/firebase.messaging'];
+    final client = await clientViaServiceAccount(accountCredentials, scopes);
+    final token = client.credentials.accessToken.data;
+    client.close();
+    return token;
+  }
 }

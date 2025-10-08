@@ -5,7 +5,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:web_socket_app/model/message_model/message_model.dart';
-import '../notification_handle/notificationHandle.dart';
+import 'package:web_socket_app/notification_handle/notificationHandle.dart';
 
 /// ChatService class handles all chat-related operations
 /// such as sending messages, uploading images, and notifications.
@@ -67,6 +67,7 @@ class ChatService {
     String? fileName,
     String? publicId,
     required String? callRoomID,
+    bool isCallNotification = false,
   }) async {
     final receiverDoc = await _firestore
         .collection('users')
@@ -109,7 +110,6 @@ class ChatService {
           'timestamp': FieldValue.serverTimestamp(),
           'senderEmail': FirebaseAuth.instance.currentUser?.email ?? "",
           'senderName': senderName,
-          'timestamp': timestamp,
           'repliedTo': repliedMessage?.toJson(),
           'isRead': false,
           'readAt': null,
@@ -166,20 +166,22 @@ class ChatService {
     }, SetOptions(merge: true));
 
     // Send push notification to all tokens
-    final notifier = NotificationHandler(context);
 
-    for (String token in receiverTokens) {
-      await notifier.sendPushNotification(
-        token,
-        message ?? "📷 Image",
-        senderName,
-        senderId: senderId,
-        senderEmail: senderEmail,
-      );
+    if (!isCallNotification) {
+      final notifier = NotificationHandler(context);
+      for (String token in receiverTokens) {
+        await notifier.sendPushNotification(
+          token,
+          message ?? "📷 Image",
+          senderName,
+          senderId: senderId,
+          senderEmail: senderEmail,
+        );
+      }
+      print("✉️ Sending message from $senderId → $receiverId");
+      print("📨 Message content: $message");
+      print("🎯 Receiver tokens: $receiverTokens");
+      print(" Message sent & notification triggered!");
     }
-    print("✉️ Sending message from $senderId → $receiverId");
-    print("📨 Message content: $message");
-    print("🎯 Receiver tokens: $receiverTokens");
-    print(" Message sent & notification triggered!");
   }
 }

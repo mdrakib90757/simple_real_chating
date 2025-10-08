@@ -9,22 +9,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_callkit_incoming/entities/android_params.dart';
 import 'package:flutter_callkit_incoming/entities/call_event.dart';
 import 'package:flutter_callkit_incoming/entities/call_kit_params.dart';
-import 'package:flutter_callkit_incoming/entities/ios_params.dart';
 import 'package:flutter_callkit_incoming/entities/notification_params.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_app/firebase_options.dart';
 import 'package:web_socket_app/screen/auth_screen/signIn_screen.dart';
-import 'package:web_socket_app/screen/call_screen/call_screen.dart';
-import 'package:web_socket_app/screen/chat_screen.dart';
 import 'package:flutter/scheduler.dart' hide Priority;
-import 'package:web_socket_app/screen/incomaing_screen/incomaing_screen.dart';
 import 'package:web_socket_app/screen/splash_screen/splash_screen.dart';
 import 'package:web_socket_app/utils/setting/setting.dart';
 import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
 import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
-
-import 'group_call_screen/group_call_screen.dart';
 
 const AndroidNotificationChannel channel = AndroidNotificationChannel(
   'call_channel',
@@ -36,16 +31,77 @@ const AndroidNotificationChannel channel = AndroidNotificationChannel(
   enableVibration: true,
 );
 
+// chat channel
+const AndroidNotificationChannel chatChannel = AndroidNotificationChannel(
+  'high_importance_channel',
+  'Chat Notifications',
+  description: 'This channel is used for important chat notifications.',
+  importance: Importance.max,
+  playSound: true,
+  enableVibration: true,
+);
+
+// NEW TOP-LEVEL FUNCTION FOR BACKGROUND NOTIFICATION RESPONSE
+@pragma('vm:entry-point')
+void notificationTapBackground(
+  NotificationResponse notificationResponse,
+) async {
+  WidgetsFlutterBinding.ensureInitialized(); // Ensure Flutter is initialized
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  ); // Re-initialize Firebase
+  log(
+    'background notification action tapped: ${notificationResponse.notificationResponseType}',
+  );
+  if (notificationResponse.payload != null) {
+    log(
+      'Background notification payload (top-level): ${notificationResponse.payload}',
+    );
+    final data = jsonDecode(notificationResponse.payload!);
+    if (data['notificationType'] == 'chat') {
+      log(
+        'Background chat notification tapped! Sender ID: ${data['senderID']}',
+      );
+    } else if (data['notificationType'] == 'call') {
+      _handleCallNotificationResponse(notificationResponse);
+    }
+  }
+}
+
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 late List<CameraDescription> cameras;
+const String kStoredUserIdKey = 'current_user_id';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // Background message handler
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // Request Notification Permissions (for Android 13+)
+  final hasNotificationPermission =
+      await FlutterCallkitIncoming.requestNotificationPermission({
+        "title": "Notification Permission",
+        "rationaleMessagePermission":
+            "Notification permission is required to show call notifications.",
+        "postNotificationMessageRequired":
+            "Notification permission is required. Please allow notification permission from settings.",
+      });
+  log(
+    "Notification Permission: $hasNotificationPermission",
+    name: "PERMISSION",
+  );
+  await FlutterCallkitIncoming.requestFullIntentPermission();
+
+  final canUseFullScreenIntent =
+      await FlutterCallkitIncoming.canUseFullScreenIntent();
+  log(
+    "Can use Full Screen Intent: $canUseFullScreenIntent",
+    name: "PERMISSION",
+  );
 
   // Setup local notification channel
   await flutterLocalNotificationsPlugin
@@ -54,75 +110,44 @@ void main() async {
       >()
       ?.createNotificationChannel(channel);
 
-  // Initialize local notifications
+  // chat channel impl
+  await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >()
+      ?.createNotificationChannel(chatChannel);
+
   const AndroidInitializationSettings androidInit =
       AndroidInitializationSettings('ic_stat_notification_bell');
-
   final InitializationSettings initializationSettings = InitializationSettings(
     android: androidInit,
   );
-  // await flutterLocalNotificationsPlugin.initialize(
-  //   const InitializationSettings(
-  //     android: AndroidInitializationSettings('ic_stat_notification_bell'),
-  //   ),
-  //   onDidReceiveNotificationResponse: (NotificationResponse response) async {
-  //     if (response.payload == null) return;
-  //
-  //     final data = jsonDecode(response.payload!);
-  //     final action = data['action'] ?? 'none';
-  //
-  //     final callID = data['channelName'];
-  //     final inviterID = data['senderID'];
-  //     final callTypeString = data['callType'] ?? 'voice';
-  //     final isVideo = callTypeString.toLowerCase() == 'video';
-  //     final zegoCallType = isVideo ? ZegoCallType.videoCall : ZegoCallType.voiceCall;
-  //
-  //     // Make sure user is logged in
-  //     if (FirebaseAuth.instance.currentUser == null) return;
-  //
-  //     if (action == 'accept') {
-  //       // Navigate to Zego call screen
-  //       navigatorKey.currentState?.push(
-  //         MaterialPageRoute(
-  //           builder: (_) => ZegoUIKitPrebuiltCall(
-  //             appID: ZegoConfig.appID,
-  //             appSign: ZegoConfig.appSign,
-  //             userID: FirebaseAuth.instance.currentUser!.uid,
-  //             userName: FirebaseAuth.instance.currentUser!.email ??
-  //                 FirebaseAuth.instance.currentUser!.uid,
-  //             callID: callID,
-  //             config: zegoCallType == ZegoCallType.videoCall
-  //                 ? ZegoUIKitPrebuiltCallConfig.oneOnOneVideoCall()
-  //                 : ZegoUIKitPrebuiltCallConfig.oneOnOneVoiceCall(),
-  //           ),
-  //         ),
-  //       );
-  //     } else if (action == 'decline') {
-  //       // Send decline to Zego and update Firestore
-  //       try {
-  //         await FirebaseFirestore.instance
-  //             .collection('calls')
-  //             .doc(callID)
-  //             .update({'status': 'ended'});
-  //         ZegoUIKitPrebuiltCallInvitationService().reject(customData: callID,);
-  //         await FlutterCallkitIncoming.endCall(callID);
-  //       } catch (e) {
-  //         log("❌ Error declining call: $e");
-  //       }
-  //     } else {
-  //       // tapped on notification itself (general tap)
-  //       await _handleCallNotification(data);
-  //     }
-  //   },
-  // );
 
-  // Foreground notifications
+  await flutterLocalNotificationsPlugin.initialize(
+    initializationSettings,
+    onDidReceiveNotificationResponse: (NotificationResponse response) async {
+      if (response.payload != null) {
+        log('Notification payload: ${response.payload}');
+        final data = jsonDecode(response.payload!);
+        if (data['notificationType'] == 'chat') {
+          // Add the logic to navigate to the chat screen here
+          log('Chat notification tapped! Sender ID: ${data['senderID']}');
+          // navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => ChatScreen(receiverId: data['senderID'])));
+        } else if (data['notificationType'] == 'call') {
+          // Existing logic for tapping call notifications
+          _handleCallNotificationResponse(response);
+        }
+      }
+    },
+    onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
+  );
+
   await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
     alert: true,
     badge: true,
     sound: true,
   );
-  setupNotificationResponseHandler();
+
   setupFirebaseListeners();
   setupCallkitListeners();
 
@@ -172,7 +197,9 @@ String? currentCallChannel;
 bool isCallActiveOrIncoming = false;
 
 /// ZegoCloud SDK Initialization
-void _onUserLogin(String userID, String userName) {
+void _onUserLogin(String userID, String userName) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(kStoredUserIdKey, userID);
   final invitationService = ZegoUIKitPrebuiltCallInvitationService();
   invitationService.init(
     appID: ZegoConfig.appID,
@@ -180,6 +207,7 @@ void _onUserLogin(String userID, String userName) {
     userID: userID,
     userName: userName,
     plugins: [ZegoUIKitSignalingPlugin()],
+
     events: ZegoUIKitPrebuiltCallEvents(
       onHangUpConfirmation: (event, defaultAction) => defaultAction(),
     ),
@@ -365,6 +393,7 @@ Future<void> _updateFCMToken(String userID) async {
   }
 }
 
+//
 void setupCallkitListeners() {
   FlutterCallkitIncoming.onEvent.listen((event) async {
     if (event == null) return;
@@ -377,7 +406,7 @@ void setupCallkitListeners() {
 
     switch (event.event) {
       case Event.actionCallAccept:
-        print("✅ Callkit Accept tapped for callID: $callID");
+        print("Callkit Accept tapped for callID: $callID");
 
         // Update Firestore status
         await FirebaseFirestore.instance.collection('calls').doc(callID).update(
@@ -419,11 +448,13 @@ void setupCallkitListeners() {
         // Update Firestore for missed/ended call
         await FirebaseFirestore.instance.collection('calls').doc(callID).update(
           {
-            'status': 'missed',
+            'status': 'ended',
             'missedBy': FieldValue.arrayUnion([currentUser.uid]),
           },
         );
-
+        await ZegoUIKitPrebuiltCallInvitationService().reject(
+          customData: callID,
+        );
         await FlutterCallkitIncoming.endCall(callID);
         break;
 
@@ -433,162 +464,120 @@ void setupCallkitListeners() {
   });
 }
 
-// Notification response handler
-void setupNotificationResponseHandler() {
-  flutterLocalNotificationsPlugin.initialize(
-    const InitializationSettings(
-      android: AndroidInitializationSettings('ic_stat_notification_bell'),
-    ),
-    onDidReceiveNotificationResponse: (NotificationResponse response) async {
-      if (response.payload == null) return;
-
-      final data = jsonDecode(response.payload!);
-      final action = data['action'] ?? 'none';
-
-      final callID = data['channelName'];
-      final inviterID = data['senderID'];
-      final callTypeString = data['callType'] ?? 'voice';
-      final isVideo = callTypeString.toLowerCase() == 'video';
-      final zegoCallType = isVideo
-          ? ZegoCallType.videoCall
-          : ZegoCallType.voiceCall;
-
-      // Make sure user is logged in
-      if (FirebaseAuth.instance.currentUser == null) return;
-
-      if (action == 'accept') {
-        // Navigate to Zego call screen
-        navigatorKey.currentState?.push(
-          MaterialPageRoute(
-            builder: (_) => ZegoUIKitPrebuiltCall(
-              appID: ZegoConfig.appID,
-              appSign: ZegoConfig.appSign,
-              userID: FirebaseAuth.instance.currentUser!.uid,
-              userName:
-                  FirebaseAuth.instance.currentUser!.email ??
-                  FirebaseAuth.instance.currentUser!.uid,
-              callID: callID,
-              config: zegoCallType == ZegoCallType.videoCall
-                  ? ZegoUIKitPrebuiltCallConfig.oneOnOneVideoCall()
-                  : ZegoUIKitPrebuiltCallConfig.oneOnOneVoiceCall(),
-            ),
-          ),
-        );
-      } else if (action == 'decline') {
-        // Send decline to Zego and update Firestore
-        try {
-          await FirebaseFirestore.instance
-              .collection('calls')
-              .doc(callID)
-              .update({'status': 'ended'});
-          await ZegoUIKitPrebuiltCallInvitationService().reject(
-            customData: callID,
-          );
-          await FlutterCallkitIncoming.endCall(callID);
-        } catch (e) {
-          log("❌ Error declining call: $e");
-        }
-      } else {
-        // tapped on notification itself (general tap)
-        await _handleCallNotification(data);
-      }
-    },
-  );
-}
-
-//Background message listener setup
+///Background message listener setup
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  log("🔥 Handling a background message: ${message.messageId}");
-
-  ZegoUIKitPrebuiltCallInvitationService().setNavigatorKey(navigatorKey);
-  ZegoUIKitPrebuiltCallInvitationService().enterAcceptedOfflineCall();
-
+  log(
+    "🔥 BG message received: ${message.messageId} | data: ${message.data}",
+    name: "FCM_BG_HANDLER",
+  );
   final data = message.data;
-  final List<String> inviteesList =
-      (jsonDecode(data['invitees'] ?? '[]') as List)
-          .map((e) => e.toString())
-          .toList();
+  log(
+    "🔥 BG Handler: Received notificationType: ${data['notificationType']}",
+    name: "FCM_BG_HANDLER",
+  );
 
-  if (data['notificationType'] == 'call') {
-    await FlutterCallkitIncoming.showCallkitIncoming(
-      CallKitParams(
-        id: data['channelName'],
-        nameCaller: data['senderEmail'] ?? 'Unknown',
-        appName: 'Chatter',
-        type: data['callType'] == 'audio' ? 0 : 1,
-        extra: {
-          "callerID": data['senderID'],
-          "calleeID": "",
-          "callID": data['channelName'],
-          "invitees": inviteesList,
-          "callType": data['callType'],
-        },
-        missedCallNotification: NotificationParams(showNotification: true),
-        callingNotification: NotificationParams(showNotification: true),
+  if (data['notificationType'] == 'chat') {
+    log(
+      "💬 BG Handler: Handling as chat notification.",
+      name: "FCM_BG_HANDLER",
+    );
+    final senderID = data['senderID'];
+    final senderEmail = data['senderEmail'];
+    final messageBody = data['body'] ?? 'New Message';
+    final notificationTitle = data['title'] ?? "New Message";
+    final senderName = data['senderName'] ?? senderEmail;
+
+    // Show a local notification for background chat messages
+    await flutterLocalNotificationsPlugin.show(
+      senderID.hashCode, // Unique ID for each sender
+      notificationTitle, // Use the title from data payload
+      messageBody,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          chatChannel.id, // Use the new chat channel
+          chatChannel.name,
+          channelDescription: chatChannel.description,
+          importance: Importance.max,
+          priority: Priority.max,
+          fullScreenIntent: false,
+          category: AndroidNotificationCategory.message,
+          // sound: RawResourceAndroidNotificationSound('message'),
+          // playSound: true,
+        ),
       ),
+      payload: jsonEncode(data),
+    );
+  } else if (data['notificationType'] == 'call' ||
+      data['notificationType'] == 'group_call') {
+    // Add 'group_call' explicitly
+    log(
+      "📞 BG Handler: Handling as call/group_call notification...",
+      name: "FCM_BG_HANDLER",
+    );
+    _handleCallNotification(data);
+  } else {
+    log(
+      "❓ BG Handler: Unknown notificationType: ${data['notificationType']}",
+      name: "FCM_BG_HANDLER",
     );
   }
 }
 
-//Foreground message listener setup (call this from HomeScreen initState)
 void setupFirebaseListeners() {
   FirebaseMessaging.onMessage.listen((message) {
-    log("--- Incoming foreground message ---");
-    log("Message data: ${message.data}");
+    log(
+      "Foreground message received: ${message.messageId} | data: ${message.data}",
+    );
     final data = message.data;
-
-    ZegoUIKitPrebuiltCallInvitationService().setNavigatorKey(navigatorKey);
-    ZegoUIKitPrebuiltCallInvitationService().enterAcceptedOfflineCall();
-    if (data['notificationType'] == 'call') {
-      _handleCallNotification(data);
-    } else if (data['notificationType'] == 'chat') {
+    if (data['notificationType'] == 'chat') {
+      log("Calling _handleChatNotification for foreground chat...");
       _handleChatNotification(data);
     }
   });
 
   // App opened from background by tapping notification
   FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-    log("--- Notification tapped from background ---");
-    log("Message data: ${message.data}");
+    log(
+      "App opened from background: ${message.messageId} | data: ${message.data}",
+    );
     final data = message.data;
-
-    ZegoUIKitPrebuiltCallInvitationService().setNavigatorKey(navigatorKey);
-    ZegoUIKitPrebuiltCallInvitationService().enterAcceptedOfflineCall();
 
     if (data['notificationType'] == 'call') {
       _handleCallNotification(data);
-    } else if (data['notificationType'] == 'chat') {
-      _handleChatNotification(data);
+    } else if (data["notificationType"] == 'chat') {
+      _handleChatNotificationResponse(
+        NotificationResponse(
+          payload: jsonEncode(data),
+          notificationResponseType:
+              NotificationResponseType.selectedNotificationAction,
+        ),
+      );
     }
   });
 
   // App opened from terminated state
   FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
     if (message != null) {
-      log("--- App opened from terminated state ---");
-      log("Message data: ${message.data}");
+      log(
+        "App opened from terminated state: ${message.messageId} | data: ${message.data}",
+      );
       final data = message.data;
-
-      ZegoUIKitPrebuiltCallInvitationService().setNavigatorKey(navigatorKey);
-      ZegoUIKitPrebuiltCallInvitationService().enterAcceptedOfflineCall();
-      if (message?.data['notificationType'] == 'call') {
-        _handleCallNotification(message!.data);
-      } else if (message?.data['notificationType'] == 'chat') {
-        _handleChatNotification(message!.data);
+      if (data['notificationType'] == 'call') {
+        _handleCallNotification(data);
+      } else if (['notificationType'] == 'chat') {
+        _handleChatNotificationResponse(
+          NotificationResponse(
+            payload: jsonEncode(data),
+            notificationResponseType:
+                NotificationResponseType.selectedNotificationAction,
+          ),
+        );
       }
     }
   });
-}
-
-// get user photo
-Future<String> _getUserPhoto(String userID) async {
-  final doc = await FirebaseFirestore.instance
-      .collection('users')
-      .doc(userID)
-      .get();
-  return doc['photoUrl'] ?? "";
 }
 
 Future<Map<String, dynamic>> _getUserInfo(String userID) async {
@@ -601,21 +590,37 @@ Future<Map<String, dynamic>> _getUserInfo(String userID) async {
 
 // Handle call notification (overlay / screen)
 Future<void> _handleCallNotification(Map<String, dynamic> data) async {
-  final senderID = data['senderID'];
-  final senderEmail = data['senderEmail'];
-  final channelName = data['channelName'];
-  final callType = data['callType'];
-  final notificationType = data['notificationType'];
-  print("---- 🔔 _handleNavigation Called ----");
-  print("senderEmail: $senderEmail");
-  print("senderID: $senderID");
-  print("callType: $callType");
-  print("channelName: $channelName");
-  print("notificationType: $notificationType");
-  print("Current FirebaseAuth UID: ${FirebaseAuth.instance.currentUser?.uid}");
+  log(
+    "📞 CALL_HANDLER: Inside _handleCallNotification. Data: $data",
+    name: "CALL_HANDLER",
+  );
 
   final currentUser = FirebaseAuth.instance.currentUser;
-  if (currentUser == null || currentUser.uid == data['senderID']) return;
+  if (currentUser == null) {
+    log(
+      "❌ _handleCallNotification: No current user, returning.",
+      name: "CALL_HANDLER",
+    );
+    return;
+  }
+
+  if (currentUser.uid == data['senderID']) {
+    log(
+      "❌ _handleCallNotification: Current user (${currentUser.uid}) is the sender (${data['senderID']}). Ignoring incoming call notification for caller.",
+      name: "CALL_HANDLER",
+    );
+
+    return;
+  }
+
+  // Ensure 'channelName' is present and not null
+  if (data['channelName'] == null) {
+    log(
+      "❌ CALL_HANDLER: 'channelName' is missing in FCM data. Cannot show Callkit.",
+      name: "CALL_HANDLER",
+    );
+    return;
+  }
 
   final userInfo = await _getUserInfo(data['senderID']);
   final callerName =
@@ -625,9 +630,33 @@ Future<void> _handleCallNotification(Map<String, dynamic> data) async {
       'Unknown';
   final callerPhoto = userInfo['photoUrl'] ?? "";
 
-  final inviteesList = (jsonDecode(data['invitees'] ?? '[]') as List)
-      .map((e) => e.toString())
-      .toList();
+  List<String> inviteesList = [];
+
+  try {
+    if (data['invitees'] != null) {
+      // inviteesList = (jsonDecode(data['invitees']) as List)
+      //     .map((e) => e.toString())
+      //     .toList();
+      if (data['invitees'] is String) {
+        inviteesList = (jsonDecode(data['invitees']) as List)
+            .map((e) => e.toString())
+            .toList();
+      } else if (data['invitees'] is List) {
+        inviteesList = (data['invitees'] as List)
+            .map((e) => e.toString())
+            .toList();
+      }
+    }
+    log(
+      "✅ CALL_HANDLER: inviteesList after decoding: $inviteesList",
+      name: "CALL_HANDLER",
+    );
+  } catch (e) {
+    log(
+      "⚠️ CALL_HANDLER: Error decoding invitees: $e, data['invitees'] (type: ${data['invitees'].runtimeType}): ${data['invitees']}",
+      name: "CALL_HANDLER",
+    );
+  }
 
   final params = CallKitParams(
     id: data['channelName'],
@@ -645,89 +674,137 @@ Future<void> _handleCallNotification(Map<String, dynamic> data) async {
       "invitees": inviteesList,
       "callType": data['callType'],
     },
-    missedCallNotification: NotificationParams(showNotification: true),
-    callingNotification: NotificationParams(showNotification: true),
-  );
+    missedCallNotification: NotificationParams(
+      showNotification: true,
+      isShowCallback: true,
+      subtitle: 'Missed call',
+      callbackText: 'Call back',
+    ),
+    callingNotification: NotificationParams(
+      showNotification: true,
+      isShowCallback: true,
+      subtitle: 'Calling...',
+      callbackText: 'Hang Up',
+    ),
+    android: AndroidParams(
+      incomingCallNotificationChannelName: channel.name,
+      ringtonePath: 'ringtone',
+      logoUrl: 'https://i.pravatar.cc/100',
+      isCustomNotification: true,
+      missedCallNotificationChannelName: "Missed Call",
+      isShowCallID: false,
+      isShowFullLockedScreen: true,
 
+      //fullScreenIntent: true, // Add this explicitly
+      //foregroundService: true, // Add this explicitly
+    ),
+  );
+  log(
+    "✅ CallKitParams prepared. Displaying incoming call...",
+    name: "CALL_HANDLER",
+  );
+  // await Future.delayed(const Duration(milliseconds: 500));
   await FlutterCallkitIncoming.showCallkitIncoming(params);
-  await _showIncomingCallNotification(data); // Android local notification
+  log("🎉 CallKit incoming call displayed.", name: "CALL_HANDLER");
 }
 
 // Handle chat notification
-void _handleChatNotification(Map<String, dynamic> data) {
+void _handleChatNotification(Map<String, dynamic> data) async {
   final senderID = data['senderID'];
   final senderEmail = data['senderEmail'];
-  final currentUser = FirebaseAuth.instance.currentUser!;
+  final messageBody =
+      data['body'] ?? 'New Message'; // <-- 'body' from data payload
+  final notificationTitle =
+      data['title'] ?? "New Message"; // <-- 'title' from data payload
+  final senderName = data['senderName'] ?? senderEmail;
 
   log(
-    "Handling chat from senderID: $senderID, currentUserID: ${currentUser.uid}",
+    "Attempting to show local notification for chat. Sender: $senderName, Body: $messageBody",
   );
-
-  if (currentUser.uid == senderID || currentChatUserId == senderID) {
-    log("Ignoring chat because it's from self or already open");
-    return;
-  }
-
-  if (currentUser.uid == senderID || currentChatUserId == senderID) return;
-
-  currentChatUserId = senderID;
-
-  // navigatorKey.currentState!
-  //     .push(
-  //       MaterialPageRoute(
-  //         builder: (_) => ChatScreen(
-  //           currentUserEmail: currentUser.email!,
-  //           receiverEmail: senderEmail,
-  //           receiverID: senderID,
-  //           currentUserId: currentUser.uid,
-  //           receiverUserId: senderID,
-  //         ),
-  //       ),
-  //     )
-  //     .then((_) => currentChatUserId = null);
-  // log("ChatScreen closed for senderID: $senderID");
-}
-
-// show incoming call notification
-Future<void> _showIncomingCallNotification(Map<String, dynamic> data) async {
-  final notificationData = {
-    ...data,
-    'action': 'none', // default
-  };
-
   await flutterLocalNotificationsPlugin.show(
-    1000,
-    "📞 Incoming Call",
-    "${data['senderEmail']} is calling...",
+    senderID.hashCode, // Unique ID for each sender
+    notificationTitle, // Use the title from data payload
+    messageBody,
     NotificationDetails(
       android: AndroidNotificationDetails(
-        channel.id,
-        channel.name,
-        channelDescription: channel.description,
+        chatChannel.id,
+        chatChannel.name,
+        channelDescription: chatChannel.description,
         importance: Importance.max,
         priority: Priority.max,
-        fullScreenIntent: true,
-        category: AndroidNotificationCategory.call,
-        ongoing: true,
-        autoCancel: false,
+        fullScreenIntent: false,
+        category: AndroidNotificationCategory.message,
+        //sound: RawResourceAndroidNotificationSound('message'),
         playSound: true,
-        sound: RawResourceAndroidNotificationSound('ringtone'),
-        actions: <AndroidNotificationAction>[
-          AndroidNotificationAction(
-            'ACCEPT_CALL',
-            'Accept',
-            showsUserInterface: true,
-            //payload: jsonEncode({...notificationData, 'action': 'accept'}),
-          ),
-          AndroidNotificationAction(
-            'DECLINE_CALL',
-            'Decline',
-            showsUserInterface: true,
-            //payload: jsonEncode({...notificationData, 'action': 'decline'}),
-          ),
-        ],
       ),
     ),
-    payload: jsonEncode(notificationData),
+    payload: jsonEncode(data),
   );
+}
+
+// Notification response handler
+void _handleChatNotificationResponse(NotificationResponse response) async {
+  if (response.payload == null) return;
+  final data = jsonDecode(response.payload!);
+
+  log('Notification response payload: ${response.payload}');
+
+  final notificationType = data['notificationType'];
+  if (notificationType == 'chat') {
+    final senderID = data['senderID'];
+    // navigatorKey.currentState?.push(MaterialPageRoute(builder: (context) => ChatScreen(receiverId: senderID)));
+    log('Chat notification response handled! Sender ID: $senderID');
+  }
+}
+
+void _handleCallNotificationResponse(NotificationResponse response) async {
+  if (response.payload == null) return;
+  final data = jsonDecode(response.payload!);
+  final action = data['action'] ?? 'none';
+  final callID = data['channelName'];
+  final callTypeString = data['callType'] ?? 'voice';
+  final isVideo = callTypeString.toLowerCase() == 'video';
+  final zegoCallType = isVideo
+      ? ZegoCallType.videoCall
+      : ZegoCallType.voiceCall;
+
+  if (FirebaseAuth.instance.currentUser == null) return;
+
+  if (action == 'ACCEPT_CALL') {
+    log('Call notification ACCEPT_CALL tapped!');
+    navigatorKey.currentState?.push(
+      MaterialPageRoute(
+        builder: (_) => ZegoUIKitPrebuiltCall(
+          appID: ZegoConfig.appID,
+          appSign: ZegoConfig.appSign,
+          userID: FirebaseAuth.instance.currentUser!.uid,
+          userName:
+              FirebaseAuth.instance.currentUser!.email ??
+              FirebaseAuth.instance.currentUser!.uid,
+          callID: callID,
+          config: zegoCallType == ZegoCallType.videoCall
+              ? ZegoUIKitPrebuiltCallConfig.oneOnOneVideoCall()
+              : ZegoUIKitPrebuiltCallConfig.oneOnOneVoiceCall(),
+        ),
+      ),
+    );
+  } else if (action == 'DECLINE_CALL') {
+    log('Call notification DECLINE_CALL tapped!');
+    try {
+      await FirebaseFirestore.instance.collection('calls').doc(callID).update({
+        'status': 'ended',
+        'endedBy': FirebaseAuth.instance.currentUser!.uid,
+        'endTime': FieldValue.serverTimestamp(),
+      });
+      await ZegoUIKitPrebuiltCallInvitationService().reject(customData: callID);
+      await FlutterCallkitIncoming.endCall(callID);
+    } catch (e) {
+      log("❌ Error declining call: $e");
+    }
+  } else {
+    // tapped on notification itself (general tap)
+    log('Call notification tapped (general)! Call ID: $callID');
+    // If you want to handle a general tap on the call notification differently
+    // For now, it will do nothing extra if not accept/decline actions.
+  }
 }

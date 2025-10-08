@@ -14,20 +14,20 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:web_socket_app/group_call_screen/group_call_screen.dart';
 import 'package:web_socket_app/model/message_model/message_model.dart';
 import 'package:web_socket_app/screen/camera/cameraScreen.dart';
+import 'package:web_socket_app/screen/group_call_screen/group_call_screen.dart';
 import 'package:web_socket_app/screen/photo_display_screen/photo_display_screen.dart';
 import 'package:web_socket_app/screen/video_display_screen/video_display_screen.dart';
+import 'package:web_socket_app/service/ChatService/chatService.dart';
 import 'package:web_socket_app/utils/color.dart';
 import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
-import '../ChatService/chatService.dart';
+
 import 'package:web_socket_app/main.dart';
 import 'package:flutter/foundation.dart' as foundation;
 import 'package:crypto/crypto.dart';
 import '../notification_handle/notificationHandle.dart';
 import '../utils/call_handler/call_handler.dart';
-import 'call_screen/call_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String receiverEmail;
@@ -668,14 +668,18 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   // get receiver FCMToke
-  Future<String?> _getReceiverFcmToken(String receiverUserId) async {
-    final doc = await FirebaseFirestore.instance
-        .collection("users")
-        .doc(receiverUserId)
-        .get();
-
-    if (doc.exists && doc.data() != null) {
-      return doc.data()!["fcmToken"];
+  Future<String?> _getReceiverFcmToken(String recipientId) async {
+    try {
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(recipientId)
+          .get();
+      if (userDoc.exists && userDoc.data() != null) {
+        Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+        return userData['fcmToken'] as String?;
+      }
+    } catch (e) {
+      print('Error getting recipient FCM token: $e');
     }
     return null;
   }
@@ -707,11 +711,30 @@ class _ChatScreenState extends State<ChatScreen> {
       context: context,
       senderId: currentUser.uid,
       receiverId: widget.receiverUserId,
-      message: isAudio ? "📞 Audio Call" : "🎥 Video Call",
+      // message: isAudio ? "📞 Audio Call" : "🎥 Video Call",
       type: "call",
       isAudioCall: isAudio,
-      callRoomID: '',
+      callRoomID: callID,
+      isCallNotification: true,
     );
+
+    String? recipientFCMToken = await _getReceiverFcmToken(widget.receiverID);
+    if (recipientFCMToken != null) {
+      await _notificationHandler?.sendCallNotification(
+        fcmToken: recipientFCMToken,
+        title: '📞 Incoming ${isAudio ? 'Audio' : 'Video'} Call',
+        body: '${currentUser.email ?? currentUser.uid} is calling you',
+        senderId: currentUser.uid,
+        senderEmail: currentUser.email ?? currentUser.uid,
+        channelName: callID,
+        callType: isAudio ? 'audio' : 'video',
+        notificationType: 'call',
+        receiverId: widget.receiverID,
+        inviteeIDs: [widget.receiverID],
+      );
+    } else {
+      print("❌ Recipient FCM token not found. Cannot send call notification.");
+    }
 
     // Create Firestore call document
     await FirebaseFirestore.instance.collection('calls').doc(callID).set({
@@ -729,8 +752,10 @@ class _ChatScreenState extends State<ChatScreen> {
       isVideoCall: !isAudio,
       customData: callID,
       timeoutSeconds: 60,
-      notificationTitle: "Incoming ${isAudio ? 'Audio' : 'Video'} Call",
-      notificationMessage: "From ${currentUser.email ?? currentUser.uid}",
+      notificationMessage: null,
+      notificationTitle: null,
+      // notificationTitle: "Incoming ${isAudio ? 'Audio' : 'Video'} Call",
+      //notificationMessage: "From ${currentUser.email ?? currentUser.uid}",
     );
   }
 
@@ -793,32 +818,6 @@ class _ChatScreenState extends State<ChatScreen> {
                 await _startCall(isAudio: false);
               },
               icon: Icon(Icons.video_call, color: Colors.white),
-            ),
-
-            //group call button
-            IconButton(
-              onPressed: () {
-                final currentUser = FirebaseAuth.instance.currentUser;
-                if (currentUser == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('No User Login')),
-                  );
-                  return;
-                }
-                final String currentUserID = currentUser.uid;
-                final String currentUserName =
-                    currentUser.email ?? currentUser.uid;
-                final String roomID =
-                    'group_call_${DateTime.now().millisecondsSinceEpoch}';
-
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => GroupCallSelectionScreen(),
-                  ),
-                );
-              },
-              icon: Icon(Icons.group, color: Colors.white),
             ),
           ],
         ),

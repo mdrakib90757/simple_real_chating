@@ -22,6 +22,7 @@ class _DisplayPictureScreenState extends State<DisplayPictureScreen> {
     bool isNetwork = _isNetworkImage(widget.imagePath);
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
         automaticallyImplyLeading: false,
         backgroundColor: AppColor.primaryColor,
