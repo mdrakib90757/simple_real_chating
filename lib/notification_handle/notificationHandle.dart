@@ -309,7 +309,7 @@ class NotificationHandler {
             'zego_platform': 'android',
             'invitees': jsonEncode(inviteeIDs),
           },
-          'android': {'priority': 'high'},
+          //'android': {'priority': 'high'},
           'apns': {
             'headers': {'apns-priority': '10', 'apns-push-type': 'alert'},
             'payload': {

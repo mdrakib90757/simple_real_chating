@@ -95,6 +95,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     _checkAdminStatus();
     _checkMembership();
     _fetchGroupDetails();
+    _markGroupMessagesAsRead();
   }
 
   Future<void> _checkAdminStatus() async {
@@ -194,7 +195,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     }
   }
 
-  //Message Sending Logic
+  //Message Sending Logic  groupChat screen
   Future<void> _sendMessage({
     String? text,
     String? imageUrl,
@@ -233,7 +234,30 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
       fileName: fileName,
       publicId: publicId,
     );
+
+    List<String> otherMemberIds = widget.groupMemberIds.where((id) => id != currentUser.uid).toList();
+
+    // Create a map to increment each other member's unread count
+    Map<String, dynamic> unreadUpdates = {};
+    for (String memberId in otherMemberIds) {
+      unreadUpdates['unreadCounts.$memberId'] = FieldValue.increment(1);
+    }
+
+    await FirebaseFirestore.instance
+        .collection('groups')
+        .doc(widget.groupId)
+        .update({
+      // Apply all unread count increments for other members
+      ...unreadUpdates,
+      // Explicitly set current sender's unread count to 0 for this group
+      'unreadCounts.${currentUser.uid}': 0,
+    });
+
+    print("Unread counts updated for group ${widget.groupId}.");
+
   }
+
+
 
   // File Upload Logic (Similar to ChatScreen but uses GroupChatService)
   Future<void> _sendFile() async {
@@ -294,11 +318,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   }
 
   // upload storage
-  Future<void> _uploadToCloudinary(
-    String filePath,
-    String fileType, {
-    String? fileName,
-  }) async {
+  Future<void> _uploadToCloudinary(String filePath, String fileType, {String? fileName,}) async {
     setState(() => _isUploading = true);
 
     const String cloudName = "dlqufneob";
@@ -562,10 +582,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   }
 
   // file delete from Cloudinary
-  Future<void> _deleteFileFromCloudinary(
-    String publicId,
-    String? fileType,
-  ) async {
+  Future<void> _deleteFileFromCloudinary(String publicId, String? fileType,) async {
     const String cloudName = "dlqufneob";
     String cloudinaryResourceType;
     if (fileType == 'image') {
@@ -626,6 +643,17 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
       print("Error deleting from Cloudinary for $publicId: $e");
     }
   }
+
+  // Function to mark group messages as read
+  Future<void> _markGroupMessagesAsRead() async {
+    await FirebaseFirestore.instance
+        .collection('groups')
+        .doc(widget.groupId)
+        .update({
+      'unreadCounts.${widget.currentUserId}': 0, // Set current user's unread count to 0
+    });
+  }
+
 
   /// Generate a unique channel ID for the group call
   String _generateChannelId() {

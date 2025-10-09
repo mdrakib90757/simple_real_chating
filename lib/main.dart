@@ -210,7 +210,10 @@ void _onUserLogin(String userID, String userName) async {
 
     events: ZegoUIKitPrebuiltCallEvents(
       onHangUpConfirmation: (event, defaultAction) => defaultAction(),
+
+
     ),
+
     invitationEvents: ZegoUIKitPrebuiltCallInvitationEvents(
       onIncomingCallTimeout: (String callID, ZegoCallUser caller) async {
         log("⏰ Missed call from ${caller.name}");
@@ -404,6 +407,13 @@ void setupCallkitListeners() {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (callID == null || currentUser == null) return;
 
+
+    if (Firebase.apps.isEmpty) {
+      log("Callkit Listener: Firebase not initialized, initializing...", name: "CALLKIT_LISTENER_INIT");
+      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    }
+
+
     switch (event.event) {
       case Event.actionCallAccept:
         print("Callkit Accept tapped for callID: $callID");
@@ -417,6 +427,9 @@ void setupCallkitListeners() {
         );
 
         // Navigate to Zego call (group or one-on-one)
+
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          if (navigatorKey.currentState != null && navigatorKey.currentState!.mounted) {
         navigatorKey.currentState!.push(
           MaterialPageRoute(
             builder: (_) => ZegoUIKitPrebuiltCall(
@@ -438,6 +451,13 @@ void setupCallkitListeners() {
             ),
           ),
         );
+          } else {
+            log("Callkit Listener: Navigator state not mounted for direct push after accept.", name: "CALLKIT_LISTENER_WARN");
+            // In terminated state, it's possible the navigator isn't ready.
+            // Rely on Zego's offline call handling if possible, or attempt navigation later.
+            // The autoEnterAcceptedOfflineCall should help here.
+          }
+        });
         break;
 
       case Event.actionCallDecline:
@@ -450,15 +470,17 @@ void setupCallkitListeners() {
           {
             'status': 'ended',
             'missedBy': FieldValue.arrayUnion([currentUser.uid]),
+            'endTime': FieldValue.serverTimestamp(),
           },
         );
-        await ZegoUIKitPrebuiltCallInvitationService().reject(
-          customData: callID,
-        );
+        //await ZegoUIKitPrebuiltCallInvitationService().reject(customData: 'call_declined_via_callkit');
+       await ZegoUIKitPrebuiltCallInvitationService().reject(customData: callID,);
         await FlutterCallkitIncoming.endCall(callID);
+        log("Callkit Listener: Decline/End actions completed for $callID", name: "CALLKIT_LISTENER_INFO");
         break;
 
       default:
+        log("Callkit Listener: Unhandled event: ${event.event}", name: "CALLKIT_LISTENER_DEBUG");
         break;
     }
   });
@@ -770,25 +792,41 @@ void _handleCallNotificationResponse(NotificationResponse response) async {
 
   if (FirebaseAuth.instance.currentUser == null) return;
 
+  if (Firebase.apps.isEmpty) {
+    log("Notification Response: Firebase not initialized, initializing...", name: "NOTIF_RESPONSE_INIT");
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  }
+
   if (action == 'ACCEPT_CALL') {
     log('Call notification ACCEPT_CALL tapped!');
-    navigatorKey.currentState?.push(
-      MaterialPageRoute(
-        builder: (_) => ZegoUIKitPrebuiltCall(
-          appID: ZegoConfig.appID,
-          appSign: ZegoConfig.appSign,
-          userID: FirebaseAuth.instance.currentUser!.uid,
-          userName:
-              FirebaseAuth.instance.currentUser!.email ??
-              FirebaseAuth.instance.currentUser!.uid,
-          callID: callID,
-          config: zegoCallType == ZegoCallType.videoCall
-              ? ZegoUIKitPrebuiltCallConfig.oneOnOneVideoCall()
-              : ZegoUIKitPrebuiltCallConfig.oneOnOneVoiceCall(),
-        ),
-      ),
-    );
-  } else if (action == 'DECLINE_CALL') {
+
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (navigatorKey.currentState != null &&
+          navigatorKey.currentState!.mounted) {
+        navigatorKey.currentState?.push(
+          MaterialPageRoute(
+            builder: (_) =>
+                ZegoUIKitPrebuiltCall(
+                  appID: ZegoConfig.appID,
+                  appSign: ZegoConfig.appSign,
+                  userID: FirebaseAuth.instance.currentUser!.uid,
+                  userName:
+                  FirebaseAuth.instance.currentUser!.email ??
+                      FirebaseAuth.instance.currentUser!.uid,
+                  callID: callID,
+                  config: zegoCallType == ZegoCallType.videoCall
+                      ? ZegoUIKitPrebuiltCallConfig.oneOnOneVideoCall()
+                      : ZegoUIKitPrebuiltCallConfig.oneOnOneVoiceCall(),
+                ),
+          ),
+        );
+      } else {
+        log(
+            "Notification Response: Navigator state not mounted for direct push after accept.",
+            name: "NOTIF_RESPONSE_WARN");
+      }
+    });
+  }else if (action == 'DECLINE_CALL') {
     log('Call notification DECLINE_CALL tapped!');
     try {
       await FirebaseFirestore.instance.collection('calls').doc(callID).update({
@@ -796,8 +834,10 @@ void _handleCallNotificationResponse(NotificationResponse response) async {
         'endedBy': FirebaseAuth.instance.currentUser!.uid,
         'endTime': FieldValue.serverTimestamp(),
       });
-      await ZegoUIKitPrebuiltCallInvitationService().reject(customData: callID);
+      //await ZegoUIKitPrebuiltCallInvitationService().reject(customData: 'call_declined_via_callkit');
+     await ZegoUIKitPrebuiltCallInvitationService().reject(customData: callID);
       await FlutterCallkitIncoming.endCall(callID);
+      log("Notification Response: Decline actions completed for $callID", name: "NOTIF_RESPONSE_INFO");
     } catch (e) {
       log("❌ Error declining call: $e");
     }

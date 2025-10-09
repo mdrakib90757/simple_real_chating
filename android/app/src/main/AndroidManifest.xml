@@ -56,10 +56,10 @@
             android:value="1001" />
         <meta-data
             android:name="com.zego.prebuilt_call.foreground_service_notification_channel_id"
-            android:value="call_channel" /> <!-- আপনার Flutter local notification এর চ্যানেল ID ব্যবহার করুন -->
+            android:value="call_channel" />
         <meta-data
             android:name="com.zego.prebuilt_call.foreground_service_notification_channel_name"
-            android:value="Incoming Calls" /> <!-- আপনার Flutter local notification এর চ্যানেল Name ব্যবহার করুন -->
+            android:value="Incoming Calls" />
         <meta-data
             android:name="com.zego.prebuilt_call.foreground_service_notification_content"
             android:value="Ongoing call..." />

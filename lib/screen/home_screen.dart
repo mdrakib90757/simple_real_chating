@@ -125,7 +125,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Create Firestore user if not exists
+  // Create Firestore user if not exists`
   Future<void> createUserIfNotExists() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -316,7 +316,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Widget _buildOnlineUsersList() {
     return SizedBox(
-      height: 125,
+      height: 130,
       child: StreamBuilder(
         stream: _firebaseDatabase.ref('presence').onValue,
         builder: (context, AsyncSnapshot<DatabaseEvent> presenceSnapshot) {
@@ -699,6 +699,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 onlineStatusText = "Offline"; // Fallback if no last_seen
               }
 
+              // Get unread count for the current user
+              final Map<String, dynamic> unreadCounts =
+                  (data['unreadCounts'] as Map<String, dynamic>?) ?? {};
+              final int currentUserUnreadCount = unreadCounts[currentUserId] ?? 0;
+
+
               return ListTile(
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16.0,
@@ -740,9 +746,33 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                   ],
                 ),
-                trailing: Text(
-                  lastMessageFormattedTime,
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                trailing: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+
+                    Text(
+                      lastMessageFormattedTime,
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    if (currentUserUnreadCount > 0) // Only show if unread > 0
+                      Container(
+                        margin: const EdgeInsets.only(top: 4),
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: AppColor.primaryColor,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          currentUserUnreadCount.toString(),
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
                 onTap: () {
                   Navigator.push(
@@ -769,6 +799,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ? "${lastMessageTime.hour}:${lastMessageTime.minute.toString().padLeft(2, '0')}"
                   : '';
               final String? groupPhotoURL = data['groupPhotoURL'] as String?;
+              // Get unread count for the current user in the group
+              final Map<String, dynamic> unreadCounts =
+                  (data['unreadCounts'] as Map<String, dynamic>?) ?? {};
+              final int currentUserUnreadCount = unreadCounts[currentUserId] ?? 0;
               return ListTile(
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16.0,
@@ -794,9 +828,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                trailing: Text(
-                  formattedTime,
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                trailing: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      formattedTime,
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+
+                    if (currentUserUnreadCount > 0) // Only show if unread > 0
+                      Container(
+                        margin: const EdgeInsets.only(top: 4),
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: AppColor.primaryColor,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          currentUserUnreadCount.toString(),
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+
+                  ],
                 ),
                 onTap: () {
                   Navigator.push(
@@ -806,7 +865,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         groupId: group.id,
                         groupName: group.name,
                         currentUserId: currentUserId,
-                        groupMemberIds: [],
+                        groupMemberIds: group.members,
                       ),
                     ),
                   );

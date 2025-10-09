@@ -166,34 +166,35 @@ class ActiveGroupCallUI extends StatelessWidget {
         config: callConfig,
         plugins: [ZegoUIKitSignalingPlugin()],
         events: ZegoUIKitPrebuiltCallEvents(
-          onCallEnd: (reason, extendedData) {
-            print("Call ended: $reason");
-            WidgetsBinding.instance.addPostFrameCallback((_) async {
-              debugPrint("onCallEnd: addPostFrameCallback triggered.");
-              try {
-                await ZegoUIKit().leaveRoom(); // Ensure room is left
-                debugPrint("onCallEnd: ZegoUIKit().leaveRoom() completed.");
-              } catch (e) {
-                debugPrint("onCallEnd: Error leaving Zego room: $e");
-              }
-
-              if (context.mounted) {
-                debugPrint("onCallEnd: Context is mounted. Attempting to pop.");
-                // Use maybePop for safety, in case there's nothing to pop
-                Navigator.of(context).maybePop();
-                debugPrint(
-                  "onCallEnd: Navigator.of(context).maybePop() called.",
-                );
-              } else {
-                debugPrint("onCallEnd: Context is NOT mounted. Cannot pop.");
-              }
-            });
-          },
+          // onCallEnd: (reason, extendedData) {
+          //   print("Call ended: $reason");
+          //   WidgetsBinding.instance.addPostFrameCallback((_) async {
+          //     debugPrint("onCallEnd: addPostFrameCallback triggered.");
+          //     try {
+          //       await ZegoUIKit().leaveRoom(); // Ensure room is left
+          //       debugPrint("onCallEnd: ZegoUIKit().leaveRoom() completed.");
+          //     } catch (e) {
+          //       debugPrint("onCallEnd: Error leaving Zego room: $e");
+          //     }
+          //
+          //     if (context.mounted) {
+          //       debugPrint("onCallEnd: Context is mounted. Attempting to pop.");
+          //       // Use maybePop for safety, in case there's nothing to pop
+          //       Navigator.of(context).maybePop();
+          //       debugPrint(
+          //         "onCallEnd: Navigator.of(context).maybePop() called.",
+          //       );
+          //     } else {
+          //       debugPrint("onCallEnd: Context is NOT mounted. Cannot pop.");
+          //     }
+          //   });
+          // },
           onError: (error) {
             print("Call error: ${error.code} - ${error.message}");
           },
           onHangUpConfirmation: (event, defaultAction) => defaultAction(),
         ),
+
       ),
     );
   }

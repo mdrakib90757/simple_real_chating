@@ -112,7 +112,7 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  // send message function
+  // send message function  chatScreen
   Future<void> _sendMessage({String? text, String? imageUrl}) async {
     final String currentText = text ?? _textController.text.trim();
     if (currentText.isEmpty && (imageUrl == null || imageUrl.isEmpty)) {
@@ -144,6 +144,21 @@ class _ChatScreenState extends State<ChatScreen> {
       repliedMessage: messageToReplay,
       callRoomID: '',
     );
+
+    // ADD UNREAD COUNT LOGIC HERE
+    final List<String> participants = [currentUser.uid, widget.receiverUserId]..sort();
+    final String chatRoomId = participants.join('_'); // Get the chatRoomId
+
+    // Increment the unread count for the receiver
+    await FirebaseFirestore.instance
+        .collection('chat_rooms')
+        .doc(chatRoomId)
+        .update({
+      'unreadCounts.${widget.receiverUserId}': FieldValue.increment(1),
+      'unreadCounts.${currentUser.uid}': 0, // Explicitly set sender's count to 0
+    });
+
+    print("Unread count for ${widget.receiverUserId} incremented.");
   }
 
   // send file with image function
@@ -205,11 +220,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   // Generic Cloudinary upload function
-  Future<void> _uploadToCloudinary(
-    String filePath,
-    String fileType, {
-    String? fileName,
-  }) async {
+  Future<void> _uploadToCloudinary(String filePath, String fileType, {String? fileName,}) async {
     setState(() => _isUploading = true);
 
     const String cloudName = "dlqufneob";
@@ -364,8 +375,18 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // all message marks function
+  // all message marks function  chatScreen
   Future<void> _markMessagesAsRead() async {
+    final List<String> participants = [widget.currentUserId, widget.receiverID]..sort();
+    final String chatRoomId = participants.join('_');
+
+    await FirebaseFirestore.instance
+        .collection('chat_rooms')
+        .doc(chatRoomId)
+        .update({
+      'unreadCounts.${widget.currentUserId}': 0, // Set current user's unread count to 0
+    });
+
     final messagesRef = _firebaseFirestore
         .collection("chat_rooms")
         .doc(chatRoomId)
@@ -538,10 +559,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   // Function to delete files from Cloudinary
-  Future<void> _deleteFileFromCloudinary(
-    String publicId,
-    String? fileType,
-  ) async {
+  Future<void> _deleteFileFromCloudinary(String publicId, String? fileType,) async {
     const String cloudName = "dlqufneob";
     String cloudinaryResourceType;
     if (fileType == 'image') {
@@ -735,6 +753,8 @@ class _ChatScreenState extends State<ChatScreen> {
     } else {
       print("❌ Recipient FCM token not found. Cannot send call notification.");
     }
+
+
 
     // Create Firestore call document
     await FirebaseFirestore.instance.collection('calls').doc(callID).set({

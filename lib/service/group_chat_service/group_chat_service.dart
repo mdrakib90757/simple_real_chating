@@ -84,6 +84,20 @@ class GroupChatService {
       'isSystemMessage': isSystemMessage, // Crucial for UI differentiation
     };
 
+    final groupDoc = await _firestore.collection('groups').doc(groupId).get();
+    final List<String> groupMembers = List<String>.from(groupDoc.data()?['members'] ?? []);
+
+    Map<String, dynamic> unreadUpdates = {};
+    for (String memberId in groupMembers) {
+      // Increment unread count for all members EXCEPT the sender
+      if (memberId != actualSenderId) {
+        unreadUpdates['unreadCounts.$memberId'] = FieldValue.increment(1);
+      } else {
+        // Explicitly set sender's unread count to 0, in case it was non-zero for some reason
+        unreadUpdates['unreadCounts.$memberId'] = 0;
+      }
+    }
+
     // Add message to the subcollection
     await _firestore
         .collection('groups')
@@ -204,16 +218,29 @@ class GroupChatService {
       final List<Map<String, dynamic>> potentialMembers = [];
 
       for (var doc in allUsersSnapshot.docs) {
-        if (doc.id == currentUserId) continue; // Don't add current user
-        if (groupMembers.contains(doc.id))
-          continue; // Don't add existing members
+
+        // if (doc.id == currentUserId) continue; // Don't add current user
+        // if (groupMembers.contains(doc.id))
+        //   continue; // Don't add existing members
+
+        final userData = doc.data();
+        final String userId = doc.id;
+        final String userEmail = userData['email'] ?? 'No Email';
+        // Safely get name, falling back to email prefix if name is null or empty
+        final String userName = userData['name']?.isNotEmpty == true
+            ? userData['name']!
+            : userEmail.split('@')[0];
+
+        // Filter: Don't add current user AND don't add existing members
+        if (userId == currentUserId) continue;
+        if (groupMembers.contains(userId)) continue;
 
         potentialMembers.add({
-          'uid': doc.id,
-          'email': doc.data()['email'],
-          'name': doc.data()['name'] ?? doc.data()['email'].split('@')[0],
-          'fcmToken': doc.data()['fcmToken'],
-          'photoUrl': doc.data()['photoUrl'],
+          'uid': userId,
+          'email': userEmail,
+          'name': userName,
+          'fcmTokens': userData['fcmTokens'], // It's likely 'fcmTokens' (plural) and an array
+          'photoUrl': userData['photoUrl'],
         });
       }
       return potentialMembers;
@@ -224,9 +251,7 @@ class GroupChatService {
   }
 
   // Helper to get group members details
-  Future<List<Map<String, dynamic>>> getGroupMembersDetails(
-    String groupId,
-  ) async {
+  Future<List<Map<String, dynamic>>> getGroupMembersDetails(String groupId,) async {
     try {
       final groupDoc = await _firestore.collection('groups').doc(groupId).get();
       if (!groupDoc.exists) return [];
