@@ -194,7 +194,6 @@ class ActiveGroupCallUI extends StatelessWidget {
           },
           onHangUpConfirmation: (event, defaultAction) => defaultAction(),
         ),
-
       ),
     );
   }

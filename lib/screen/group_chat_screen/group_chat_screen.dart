@@ -235,7 +235,9 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
       publicId: publicId,
     );
 
-    List<String> otherMemberIds = widget.groupMemberIds.where((id) => id != currentUser.uid).toList();
+    List<String> otherMemberIds = widget.groupMemberIds
+        .where((id) => id != currentUser.uid)
+        .toList();
 
     // Create a map to increment each other member's unread count
     Map<String, dynamic> unreadUpdates = {};
@@ -247,17 +249,14 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
         .collection('groups')
         .doc(widget.groupId)
         .update({
-      // Apply all unread count increments for other members
-      ...unreadUpdates,
-      // Explicitly set current sender's unread count to 0 for this group
-      'unreadCounts.${currentUser.uid}': 0,
-    });
+          // Apply all unread count increments for other members
+          ...unreadUpdates,
+          // Explicitly set current sender's unread count to 0 for this group
+          'unreadCounts.${currentUser.uid}': 0,
+        });
 
     print("Unread counts updated for group ${widget.groupId}.");
-
   }
-
-
 
   // File Upload Logic (Similar to ChatScreen but uses GroupChatService)
   Future<void> _sendFile() async {
@@ -318,7 +317,11 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   }
 
   // upload storage
-  Future<void> _uploadToCloudinary(String filePath, String fileType, {String? fileName,}) async {
+  Future<void> _uploadToCloudinary(
+    String filePath,
+    String fileType, {
+    String? fileName,
+  }) async {
     setState(() => _isUploading = true);
 
     const String cloudName = "dlqufneob";
@@ -582,7 +585,10 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   }
 
   // file delete from Cloudinary
-  Future<void> _deleteFileFromCloudinary(String publicId, String? fileType,) async {
+  Future<void> _deleteFileFromCloudinary(
+    String publicId,
+    String? fileType,
+  ) async {
     const String cloudName = "dlqufneob";
     String cloudinaryResourceType;
     if (fileType == 'image') {
@@ -650,10 +656,10 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
         .collection('groups')
         .doc(widget.groupId)
         .update({
-      'unreadCounts.${widget.currentUserId}': 0, // Set current user's unread count to 0
-    });
+          'unreadCounts.${widget.currentUserId}':
+              0, // Set current user's unread count to 0
+        });
   }
-
 
   /// Generate a unique channel ID for the group call
   String _generateChannelId() {

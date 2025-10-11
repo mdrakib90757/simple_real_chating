@@ -103,6 +103,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       });
     }
     userStatusRef.set(status);
+    print(
+      "User ${currentUser.email} status updated: isOnline=$isOnline, last_seen=${status['last_seen']}",
+    );
   }
 
   void _initializeUserAndNotifications() async {
@@ -264,14 +267,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ListTile(
               leading: const Icon(Icons.group_add_sharp),
               title: const Text("Create group"),
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(context);
-                Navigator.push(
+                final shouldRefresh = await Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (context) => const GroupCreationScreen(),
-                  ),
+                  MaterialPageRoute(builder: (_) => GroupCreationScreen()),
                 );
+
+                if (shouldRefresh == true) {
+                  setState(() {}); // Rebuild chat list to include new group
+                }
               },
             ),
             Divider(),
@@ -314,13 +319,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  // user online list
   Widget _buildOnlineUsersList() {
     return SizedBox(
       height: 130,
       child: StreamBuilder(
         stream: _firebaseDatabase.ref('presence').onValue,
         builder: (context, AsyncSnapshot<DatabaseEvent> presenceSnapshot) {
-          if (!presenceSnapshot.hasData || presenceSnapshot.data?.snapshot.value == null) {
+          if (!presenceSnapshot.hasData ||
+              presenceSnapshot.data?.snapshot.value == null) {
             return Center(child: Text("Loading users..."));
           }
 
@@ -374,9 +381,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 final String uid = user['uid'];
                 final userPresence = presenceData[uid];
 
-                // Only include users who have a presence record or are the current user
-                // and whose email is not null/empty (basic validation)
-                if ((userPresence != null || uid == currentUser.uid) && (user['email'] as String).isNotEmpty) {
+                if ((userPresence != null || uid == currentUser.uid) &&
+                    (user['email'] as String).isNotEmpty) {
                   final bool isOnline = userPresence?['isOnline'] == true;
                   final int? lastSeenTimestamp = userPresence?['last_seen'];
 
@@ -406,11 +412,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 final int? bLastSeen = b['last_seen'];
 
                 if (aLastSeen == null && bLastSeen == null) return 0;
-                if (aLastSeen == null) return 1; // Put users without last_seen at the end
+                if (aLastSeen == null)
+                  return 1; // Put users without last_seen at the end
                 if (bLastSeen == null) return -1;
-                return bLastSeen.compareTo(aLastSeen); // Descending order (most recent first)
+                return bLastSeen.compareTo(
+                  aLastSeen,
+                ); // Descending order (most recent first)
               });
-
 
               return ListView.builder(
                 scrollDirection: Axis.horizontal,
@@ -425,28 +433,58 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   final bool isUserOnline = user['isOnline'];
                   final int? lastSeenMillis = user['last_seen'];
 
+                  // String statusText = '';
+                  // if (isCurrentUser) {
+                  //   statusText = _isDeviceConnected ? "Online" : "You";
+                  // } else if (isUserOnline) {
+                  //   statusText = "Online";
+                  // } else if (lastSeenMillis != null) {
+                  //   final DateTime lastSeenTime = DateTime.fromMillisecondsSinceEpoch(lastSeenMillis);
+                  //   final Duration difference = DateTime.now().difference(lastSeenTime);
+                  //
+                  //   if (difference.inDays > 0) {
+                  //     statusText = DateFormat.MMMd().add_jm().format(lastSeenTime); // e.g., "Oct 26, 10:30 AM"
+                  //   } else if (difference.inHours > 0) {
+                  //     statusText = "${difference.inHours}h ago";
+                  //   } else if (difference.inMinutes > 0) {
+                  //     statusText = "${difference.inMinutes}m ago";
+                  //   } else {
+                  //     statusText = "Just now";
+                  //   }
+                  // } else {
+                  //   statusText = "Offline"; // Fallback if no last_seen
+                  // }
+
                   String statusText = '';
                   if (isCurrentUser) {
-                    statusText = _isDeviceConnected ? "Online" : "You";
+                    statusText = "You"; // Changed to 'You' for current user
                   } else if (isUserOnline) {
                     statusText = "Online";
                   } else if (lastSeenMillis != null) {
-                    final DateTime lastSeenTime = DateTime.fromMillisecondsSinceEpoch(lastSeenMillis);
-                    final Duration difference = DateTime.now().difference(lastSeenTime);
+                    final DateTime lastSeenTime =
+                        DateTime.fromMillisecondsSinceEpoch(lastSeenMillis);
+                    final Duration difference = DateTime.now().difference(
+                      lastSeenTime,
+                    );
 
-                    if (difference.inDays > 0) {
-                      statusText = DateFormat.MMMd().add_jm().format(lastSeenTime); // e.g., "Oct 26, 10:30 AM"
-                    } else if (difference.inHours > 0) {
-                      statusText = "${difference.inHours}h ago";
-                    } else if (difference.inMinutes > 0) {
-                      statusText = "${difference.inMinutes}m ago";
+                    if (difference.inHours < 1) {
+                      // Within 1 hour
+                      if (difference.inMinutes > 0) {
+                        statusText = "${difference.inMinutes}m ago";
+                      } else {
+                        statusText = "Just now";
+                      }
+                    } else if (difference.inHours < 24) {
+                      // Within 24 hours
+                      //statusText = "${difference.inHours}h ago";
                     } else {
-                      statusText = "Just now";
+                      // Older than 24 hours
+                      // statusText = DateFormat.MMMd().add_jm().format(
+                      //     lastSeenTime); // e.g., "Oct 26, 10:30 AM"
                     }
                   } else {
                     statusText = "Offline"; // Fallback if no last_seen
                   }
-
 
                   return GestureDetector(
                     onTap: () async {
@@ -589,6 +627,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  // user chat list
   Widget buildChatList() {
     final String currentUserId = currentUser.uid;
 
@@ -649,7 +688,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 (id) => id != currentUserId,
                 orElse: () => '',
               );
-
               if (otherUserId.isEmpty) return const SizedBox.shrink();
 
               final Map<String, dynamic> otherUserInfo =
@@ -659,7 +697,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ? otherUserInfo['email']
                   : 'Unknown User';
               final String? otherUserPhotoUrl = otherUserInfo['photoUrl'];
-
               final Timestamp? lastMessageTimestamp =
                   data['last_message_timestamp'] as Timestamp?;
               final DateTime? lastMessageTime = lastMessageTimestamp?.toDate();
@@ -671,39 +708,117 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               final userPresence = presenceData[otherUserId];
               final bool isUserOnline = userPresence?['isOnline'] == true;
               final int? lastSeenMillis = userPresence?['last_seen'];
+              print('ChatList - User: $otherUserEmail (ID: $otherUserId)');
+              print('ChatList  isUserOnline: $isUserOnline');
+              print('ChatList  lastSeenMillis: $lastSeenMillis');
 
               String onlineStatusText = '';
-              if (isUserOnline) {
-                onlineStatusText = "Online";
-              } else if (lastSeenMillis != null) {
+              Duration? difference;
+              if (lastSeenMillis != null) {
                 final DateTime lastSeenTime =
                     DateTime.fromMillisecondsSinceEpoch(lastSeenMillis);
-                final Duration difference = DateTime.now().difference(
-                  lastSeenTime,
-                );
+                difference = DateTime.now().difference(lastSeenTime);
+              }
 
-                // Display "Xm ago" only if within 1 hour
-                if (difference.inHours < 1) {
-                  // This is the core change
-                  if (difference.inMinutes > 0) {
-                    onlineStatusText = "${difference.inMinutes}m ago";
-                  } else {
-                    onlineStatusText = "Just now";
-                  }
+              // Corrected onlineStatusText logic
+              if (isUserOnline) {
+                onlineStatusText = "Online";
+              } else if (difference != null) {
+                if (difference.inMinutes <= 1) {
+                  onlineStatusText = "Just now";
+                } else if (difference.inHours < 1) {
+                  onlineStatusText = "${difference.inMinutes}m ago";
                 } else {
-                  // If more than 1 hour, use the "Last seen" format
                   onlineStatusText =
-                      "Last seen ${DateFormat.MMMd().add_jm().format(lastSeenTime)}";
+                      "Last seen ${DateFormat.MMMd().add_jm().format(DateTime.fromMillisecondsSinceEpoch(lastSeenMillis!))}";
                 }
               } else {
                 onlineStatusText = "Offline"; // Fallback if no last_seen
+              }
+              print('  onlineStatusText (generated): $onlineStatusText');
+
+              // Start of corrected profileOverlay logic
+              Widget? profileOverlay;
+              if (isUserOnline) {
+                // Green dot for online users
+                profileOverlay = Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: Colors.green, // Green dot for online
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                  ),
+                );
+                onlineStatusText = "Online";
+              } else if (difference != null) {
+                // Time bubble for offline users within 1 hour (but not "just now")
+                if (difference.inMinutes < 60) {
+                  profileOverlay = Positioned(
+                    bottom: 0,
+                    right: -5,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColor.primaryColor, // Dark background
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Colors.green,
+                          width: 1.5,
+                        ), // Green border
+                      ),
+                      child: Text(
+                        "${difference.inMinutes}m",
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  );
+                } else if (difference.inHours < 24) {
+                  profileOverlay = Positioned(
+                    bottom: 0,
+                    right: -5,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColor.primaryColor,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Colors.grey.shade600,
+                          width: 1,
+                        ),
+                      ),
+                      child: Text(
+                        "${difference.inHours}h",
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  );
+                }
               }
 
               // Get unread count for the current user
               final Map<String, dynamic> unreadCounts =
                   (data['unreadCounts'] as Map<String, dynamic>?) ?? {};
-              final int currentUserUnreadCount = unreadCounts[currentUserId] ?? 0;
-
+              final int currentUserUnreadCount =
+                  unreadCounts[currentUserId] ?? 0;
 
               return ListTile(
                 contentPadding: const EdgeInsets.symmetric(
@@ -726,6 +841,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ? Icon(Icons.person, size: 25, color: Colors.white)
                           : null,
                     ),
+                    if (profileOverlay != null)
+                      profileOverlay, // Display the determined overlay
                   ],
                 ),
                 title: Text(
@@ -740,6 +857,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    // if (onlineStatusText.isNotEmpty)
                     Text(
                       onlineStatusText, // Display the online/last seen status
                       style: const TextStyle(fontSize: 12, color: Colors.grey),
@@ -750,7 +868,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-
                     Text(
                       lastMessageFormattedTime,
                       style: const TextStyle(fontSize: 12, color: Colors.grey),
@@ -795,14 +912,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               final Group group = Group.fromFirestore(doc);
               final DateTime? lastMessageTime = group.lastMessageTimestamp
                   ?.toDate();
+
               final String formattedTime = lastMessageTime != null
                   ? "${lastMessageTime.hour}:${lastMessageTime.minute.toString().padLeft(2, '0')}"
                   : '';
               final String? groupPhotoURL = data['groupPhotoURL'] as String?;
+
               // Get unread count for the current user in the group
               final Map<String, dynamic> unreadCounts =
                   (data['unreadCounts'] as Map<String, dynamic>?) ?? {};
-              final int currentUserUnreadCount = unreadCounts[currentUserId] ?? 0;
+              final int currentUserUnreadCount =
+                  unreadCounts[currentUserId] ?? 0;
               return ListTile(
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16.0,
@@ -854,7 +974,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                         ),
                       ),
-
                   ],
                 ),
                 onTap: () {
@@ -879,6 +998,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  //
   Stream<Map<String, dynamic>> _combinedDataStream(String currentUserId) {
     final Stream<QuerySnapshot> chatRoomsStream = FirebaseFirestore.instance
         .collection('chat_rooms')
@@ -925,48 +1045,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           : {};
 
       return {'combinedDocs': allDocs, 'presenceData': presenceData};
-    });
-  }
-
-  // stream combiner function
-  Stream<List<DocumentSnapshot>> _combinedChatAndGroupStreams(
-    String currentUserId,
-  ) {
-    final Stream<QuerySnapshot> chatRoomsStream = FirebaseFirestore.instance
-        .collection('chat_rooms')
-        .where('participants', arrayContains: currentUserId)
-        .orderBy('last_message_timestamp', descending: true)
-        .snapshots();
-
-    final Stream<QuerySnapshot> groupsStream = FirebaseFirestore.instance
-        .collection('groups')
-        .where('members', arrayContains: currentUserId)
-        .orderBy('last_message_timestamp', descending: true)
-        .snapshots();
-
-    return Rx.combineLatest2(chatRoomsStream, groupsStream, (
-      QuerySnapshot chatSnapshot,
-      QuerySnapshot groupSnapshot,
-    ) {
-      final List<DocumentSnapshot> allDocs = [];
-      allDocs.addAll(chatSnapshot.docs);
-      allDocs.addAll(groupSnapshot.docs);
-
-      allDocs.sort((a, b) {
-        final aData = a.data() as Map<String, dynamic>;
-        final bData = b.data() as Map<String, dynamic>;
-
-        final Timestamp? aTimestamp = aData['last_message_timestamp'];
-        final Timestamp? bTimestamp = bData['last_message_timestamp'];
-
-        if (aTimestamp == null && bTimestamp == null) return 0;
-        if (aTimestamp == null) return 1;
-        if (bTimestamp == null) return -1;
-
-        return bTimestamp.compareTo(aTimestamp);
-      });
-
-      return allDocs;
     });
   }
 

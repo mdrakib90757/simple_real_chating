@@ -1,4 +1,3 @@
-// lib/screen/group_creation_screen/group_creation_screen.dart
 import 'dart:convert';
 import 'dart:io';
 
@@ -12,10 +11,10 @@ import 'package:uuid/uuid.dart';
 import 'package:http/http.dart' as http;
 
 class GroupCreationScreen extends StatefulWidget {
-  final String? groupId; // Null for creation, not null for editing
-  final String? groupName; // Existing group name for editing
-  final String? groupPhotoURL; // Existing group photo URL for editing
-  final bool isEditing; // Flag to indicate if we are editing or creating
+  final String? groupId;
+  final String? groupName;
+  final String? groupPhotoURL;
+  final bool isEditing;
   const GroupCreationScreen({
     super.key,
     this.groupId,
@@ -30,7 +29,7 @@ class GroupCreationScreen extends StatefulWidget {
 
 class _GroupCreationScreenState extends State<GroupCreationScreen> {
   final TextEditingController _groupNameController = TextEditingController();
-  final List<Map<String, dynamic>> _selectedMembers = [];
+  List<Map<String, dynamic>> _selectedMembers = [];
   final User? currentUser = FirebaseAuth.instance.currentUser;
   bool _isLoading = false;
   XFile? _pickedGroupImage;
@@ -57,6 +56,12 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
         });
       }
     }
+  }
+
+  @override
+  void dispose() {
+    _groupNameController.dispose();
+    super.dispose();
   }
 
   // Fetch existing members when editing a group
@@ -105,14 +110,7 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
     }
   }
 
-  @override
-  void dispose() {
-    _groupNameController.dispose();
-    super.dispose();
-  }
-
   // Image Picking and Upload Logic
-
   Future<void> _pickGroupImage() async {
     final picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
@@ -123,6 +121,7 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
     }
   }
 
+  // update Storage in Cloudinary
   Future<String?> _uploadGroupImageToCloudinary(String filePath) async {
     setState(() => _isLoading = true);
     final url = Uri.parse(
@@ -153,8 +152,7 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
     }
   }
 
-  // Group Creation/Update Logic
-
+  /// Group Creation/Update Logic
   Future<void> _handleGroupAction() async {
     if (currentUser == null) {
       _showSnackBar("You must be logged in to perform this action.");
@@ -164,8 +162,7 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
       _showSnackBar("Please enter a group name.");
       return;
     }
-    if (_selectedMembers.length < 1) {
-      // Changed to 1, as creator is always a member
+    if (_selectedMembers.isEmpty) {
       _showSnackBar("Please add at least one member (including yourself).");
       return;
     }
@@ -174,8 +171,7 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
       _isLoading = true;
     });
 
-    String? finalGroupPhotoURL =
-        _currentGroupPhotoURL; // Start with existing or null
+    String? finalGroupPhotoURL = _currentGroupPhotoURL;
 
     if (_pickedGroupImage != null) {
       finalGroupPhotoURL = await _uploadGroupImageToCloudinary(
@@ -194,9 +190,14 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
       final String groupId = widget.isEditing
           ? widget.groupId!
           : const Uuid().v4();
+
+      // Ensure current user is in members
       final List<String> memberUids = _selectedMembers
           .map((m) => m['uid'] as String)
           .toList();
+      if (!memberUids.contains(currentUser!.uid)) {
+        memberUids.add(currentUser!.uid);
+      }
 
       final Map<String, dynamic> memberInfo = {};
       for (var member in _selectedMembers) {
@@ -209,11 +210,14 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
       final Map<String, dynamic> groupData = {
         'id': groupId,
         'name': _groupNameController.text.trim(),
-        'creatorId': currentUser!
-            .uid, // Creator remains the same even if edited by another admin
+        'creatorId': currentUser!.uid,
         'members': memberUids,
         'memberInfo': memberInfo,
-        'groupPhotoURL': finalGroupPhotoURL, // Save the group photo URL
+        'groupPhotoURL': finalGroupPhotoURL,
+        'last_message': null,
+        'last_message_timestamp': FieldValue.serverTimestamp(), // <-- fix
+        'last_message_sender_id': null,
+        'last_message_sender_name': null,
       };
 
       if (widget.isEditing) {
@@ -227,10 +231,6 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
         );
       } else {
         groupData['createdAt'] = FieldValue.serverTimestamp();
-        groupData['last_message'] = null;
-        groupData['last_message_timestamp'] = null;
-        groupData['last_message_sender_id'] = null;
-        groupData['last_message_sender_name'] = null;
         await FirebaseFirestore.instance
             .collection('groups')
             .doc(groupId)
@@ -240,7 +240,7 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
         );
       }
 
-      Navigator.pop(context); // Go back to previous screen
+      Navigator.pop(context, true); // Return "refresh needed"
     } catch (e) {
       print("Error during group action: $e");
       _showSnackBar(
@@ -253,111 +253,211 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
     }
   }
 
-  Future<void> _createGroup() async {
-    if (currentUser == null) {
-      _showSnackBar("You must be logged in to create a group.");
-      return;
-    }
-    if (_groupNameController.text.trim().isEmpty) {
-      _showSnackBar("Please enter a group name.");
-      return;
-    }
-    if (_selectedMembers.length < 2) {
-      _showSnackBar("Please add at least one other member to the group.");
-      return;
-    }
+  // Future<void> _handleGroupAction() async {
+  //   if (currentUser == null) {
+  //     _showSnackBar("You must be logged in to perform this action.");
+  //     return;
+  //   }
+  //   if (_groupNameController.text.trim().isEmpty) {
+  //     _showSnackBar("Please enter a group name.");
+  //     return;
+  //   }
+  //   if (_selectedMembers.length < 1) {
+  //     // Changed to 1, as creator is always a member
+  //     _showSnackBar("Please add at least one member (including yourself).");
+  //     return;
+  //   }
+  //
+  //   setState(() {
+  //     _isLoading = true;
+  //   });
+  //
+  //   String? finalGroupPhotoURL =
+  //       _currentGroupPhotoURL; // Start with existing or null
+  //
+  //   if (_pickedGroupImage != null) {
+  //     finalGroupPhotoURL = await _uploadGroupImageToCloudinary(
+  //       _pickedGroupImage!.path,
+  //     );
+  //     if (finalGroupPhotoURL == null) {
+  //       _showSnackBar(
+  //         "Failed to upload group image. Group not created/updated.",
+  //       );
+  //       setState(() => _isLoading = false);
+  //       return;
+  //     }
+  //   }
+  //
+  //   try {
+  //     final String groupId = widget.isEditing
+  //         ? widget.groupId!
+  //         : const Uuid().v4();
+  //     // Ensure current user is in members
+  //     final List<String> memberUids = _selectedMembers
+  //         .map((m) => m['uid'] as String)
+  //         .toList();
+  //     if (!memberUids.contains(currentUser!.uid)) {
+  //       memberUids.add(currentUser!.uid);
+  //     }
+  //
+  //     final Map<String, dynamic> memberInfo = {};
+  //     for (var member in _selectedMembers) {
+  //       memberInfo[member['uid']] = {
+  //         'email': member['email'],
+  //         'photoUrl': member['photoUrl'],
+  //       };
+  //     }
+  //
+  //     final Map<String, dynamic> groupData = {
+  //       'id': groupId,
+  //       'name': _groupNameController.text.trim(),
+  //       'creatorId': currentUser!
+  //           .uid, // Creator remains the same even if edited by another admin
+  //       'members': memberUids,
+  //       'memberInfo': memberInfo,
+  //       'groupPhotoURL': finalGroupPhotoURL, // Save the group photo URL
+  //     };
+  //
+  //     if (widget.isEditing) {
+  //       groupData['updatedAt'] = FieldValue.serverTimestamp();
+  //       await FirebaseFirestore.instance
+  //           .collection('groups')
+  //           .doc(groupId)
+  //           .update(groupData);
+  //       _showSnackBar(
+  //         "Group '${_groupNameController.text.trim()}' updated successfully!",
+  //       );
+  //     } else {
+  //       groupData['createdAt'] = FieldValue.serverTimestamp();
+  //       groupData['last_message'] = null;
+  //       groupData['last_message_timestamp'] = null;
+  //       groupData['last_message_sender_id'] = null;
+  //       groupData['last_message_sender_name'] = null;
+  //       await FirebaseFirestore.instance
+  //           .collection('groups')
+  //           .doc(groupId)
+  //           .set(groupData);
+  //       _showSnackBar(
+  //         "Group '${_groupNameController.text.trim()}' created successfully!",
+  //       );
+  //     }
+  //
+  //     Navigator.pop(context); // Go back to previous screen
+  //   } catch (e) {
+  //     print("Error during group action: $e");
+  //     _showSnackBar(
+  //       "Failed to ${widget.isEditing ? 'update' : 'create'} group: $e",
+  //     );
+  //   } finally {
+  //     setState(() {
+  //       _isLoading = false;
+  //     });
+  //   }
+  // }
 
-    setState(() {
-      _isLoading = true;
-    });
-    String? finalGroupPhotoURL =
-        _currentGroupPhotoURL; // Start with existing or null
-
-    if (_pickedGroupImage != null) {
-      finalGroupPhotoURL = await _uploadGroupImageToCloudinary(
-        _pickedGroupImage!.path,
-      );
-      if (finalGroupPhotoURL == null) {
-        _showSnackBar(
-          "Failed to upload group image. Group not created/updated.",
-        );
-        setState(() => _isLoading = false);
-        return;
-      }
-    }
-    try {
-      final String groupId = const Uuid().v4(); // Generate unique group ID
-      final List<String> memberUids = _selectedMembers
-          .map((m) => m['uid'] as String)
-          .toList();
-      print('Creating group with members: $memberUids');
-
-      // Prepare member info for easy access
-      final Map<String, dynamic> memberInfo = {};
-      for (var member in _selectedMembers) {
-        memberInfo[member['uid']] = {
-          'email': member['email'],
-          'photoUrl': member['photoUrl'],
-        };
-      }
-
-      await FirebaseFirestore.instance.collection('groups').doc(groupId).set({
-        'id': groupId,
-        'name': _groupNameController.text.trim(),
-        'creatorId': currentUser!.uid,
-        'members': memberUids,
-        'memberInfo': memberInfo,
-        'createdAt': FieldValue.serverTimestamp(),
-        'last_message': null,
-        'last_message_timestamp': null,
-        'last_message_sender_id': null,
-        'last_message_sender_name': null,
-      });
-
-      _showSnackBar(
-        "Group '${_groupNameController.text.trim()}' created successfully!",
-      );
-      Navigator.pop(context); // Go back to previous screen (HomeScreen)
-    } catch (e) {
-      print("Error creating group: $e");
-      _showSnackBar("Failed to create group: $e");
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
+  ///
+  // Future<void> _createGroup() async {
+  //   if (currentUser == null) {
+  //     _showSnackBar("You must be logged in to create a group.");
+  //     return;
+  //   }
+  //   if (_groupNameController.text.trim().isEmpty) {
+  //     _showSnackBar("Please enter a group name.");
+  //     return;
+  //   }
+  //   if (_selectedMembers.length < 2) {
+  //     _showSnackBar("Please add at least one other member to the group.");
+  //     return;
+  //   }
+  //
+  //   setState(() {
+  //     _isLoading = true;
+  //   });
+  //   String? finalGroupPhotoURL =
+  //       _currentGroupPhotoURL; // Start with existing or null
+  //
+  //   if (_pickedGroupImage != null) {
+  //     finalGroupPhotoURL = await _uploadGroupImageToCloudinary(
+  //       _pickedGroupImage!.path,
+  //     );
+  //     if (finalGroupPhotoURL == null) {
+  //       _showSnackBar(
+  //         "Failed to upload group image. Group not created/updated.",
+  //       );
+  //       setState(() => _isLoading = false);
+  //       return;
+  //     }
+  //   }
+  //   try {
+  //     final String groupId = const Uuid().v4(); // Generate unique group ID
+  //     final List<String> memberUids = _selectedMembers
+  //         .map((m) => m['uid'] as String)
+  //         .toList();
+  //     print('Creating group with members: $memberUids');
+  //
+  //     // Prepare member info for easy access
+  //     final Map<String, dynamic> memberInfo = {};
+  //     for (var member in _selectedMembers) {
+  //       memberInfo[member['uid']] = {
+  //         'email': member['email'],
+  //         'photoUrl': member['photoUrl'],
+  //       };
+  //     }
+  //
+  //     await FirebaseFirestore.instance.collection('groups').doc(groupId).set({
+  //       'id': groupId,
+  //       'name': _groupNameController.text.trim(),
+  //       'creatorId': currentUser!.uid,
+  //       'members': memberUids,
+  //       'memberInfo': memberInfo,
+  //       'createdAt': FieldValue.serverTimestamp(),
+  //       'last_message': null,
+  //       'last_message_timestamp': null,
+  //       'last_message_sender_id': null,
+  //       'last_message_sender_name': null,
+  //     });
+  //
+  //     _showSnackBar(
+  //       "Group '${_groupNameController.text.trim()}' created successfully!",
+  //     );
+  //     Navigator.pop(context); // Go back to previous screen (HomeScreen)
+  //   } catch (e) {
+  //     print("Error creating group: $e");
+  //     _showSnackBar("Failed to create group: $e");
+  //   } finally {
+  //     setState(() {
+  //       _isLoading = false;
+  //     });
+  //   }
+  // }
+  ///
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  // add member function
   Future<void> _addMembers() async {
-    final selected = await showModalBottomSheet<List<Map<String, dynamic>>>(
-      context: context,
-      isScrollControlled: true,
-      builder: (BuildContext context) {
-        return SelectUsersForGroupScreen(
+    final selected = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SelectUsersForGroupScreen(
           excludedUids: _selectedMembers
               .map((m) => m['uid'] as String)
               .toList(),
-        );
-      },
+        ),
+      ),
     );
 
     if (selected != null && selected.isNotEmpty) {
       setState(() {
-        for (var user in selected) {
-          if (!_selectedMembers.any((m) => m['uid'] == user['uid'])) {
-            _selectedMembers.add(user);
-          }
-        }
+        _selectedMembers = selected;
       });
     }
   }
 
+  // remove member function
   void _removeMember(String uid) {
     if (uid == currentUser!.uid) {
       _showSnackBar("You cannot remove yourself from the group creation list.");
@@ -373,6 +473,7 @@ class _GroupCreationScreenState extends State<GroupCreationScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
+        centerTitle: true,
         title: const Text(
           'Create New Group',
           style: TextStyle(color: Colors.white),
@@ -527,12 +628,17 @@ class _SelectUsersForGroupScreenState extends State<SelectUsersForGroupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Get the full height of the screen
+    final mediaQuery = MediaQuery.of(context);
+    final double screenHeight = mediaQuery.size.height;
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
+        centerTitle: true,
         leading: IconButton(
           onPressed: () {
-            Navigator.pop(context);
+            Navigator.pop(context, _tempSelectedUsers);
           },
           icon: Icon(Icons.arrow_back, color: Colors.white),
         ),
@@ -542,109 +648,99 @@ class _SelectUsersForGroupScreenState extends State<SelectUsersForGroupScreen> {
         ),
         backgroundColor: AppColor.primaryColor,
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('users').snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(
-              child: CircularProgressIndicator(color: AppColor.primaryColor),
-            );
-          }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(child: Text('No users found.'));
-          }
-
-          final users = snapshot.data!.docs
-              .map((doc) {
-                final data = doc.data() as Map<String, dynamic>;
-                return {
-                  'uid': doc.id,
-                  'email': data['email'] ?? 'No Email',
-                  'photoUrl': data['photoUrl'] ?? '',
-                };
-              })
-              .where(
-                (user) => !widget.excludedUids.contains(user['uid']),
-              ) // Exclude already selected
-              .toList();
-
-          final List<Map<String, dynamic>> selectedUsers = [];
-
-          return Column(
-            children: [
-              Expanded(
-                child: ListView.builder(
-                  itemCount: users.length,
-                  itemBuilder: (context, index) {
-                    final user = users[index];
-                    return CheckboxListTile(
-                      title: Text(user['email'].split('@')[0]),
-                      secondary: CircleAvatar(
-                        backgroundImage:
-                            (user['photoUrl'] != null &&
-                                user['photoUrl'].isNotEmpty)
-                            ? NetworkImage(user['photoUrl']) as ImageProvider
-                            : null,
-                        child:
-                            (user['photoUrl'] == null ||
-                                user['photoUrl'].isEmpty)
-                            ? const Icon(Icons.person, color: Colors.white)
-                            : null,
-                        backgroundColor: AppColor.primaryColor,
+      // Wrap the Column with a Sized Box that takes up most of the screen height
+      body: SizedBox(
+        // Set a height for the content, e.g., 90% of screen height
+        // Adjust this value based on how much space you want the AppBar and bottom button to take.
+        height: screenHeight * 0.9, // This will constrain the Column's height
+        child: Column(
+          children: [
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('users')
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return Center(
+                      child: CircularProgressIndicator(
+                        color: AppColor.primaryColor,
                       ),
-                      value: _tempSelectedUsers.any(
-                        (sUser) => sUser['uid'] == user['uid'],
-                      ),
-                      // selectedUsers.any(
-                      //   (sUser) => sUser['uid'] == user['uid'],
-                      // ),
-                      onChanged: (bool? value) {
-                        //
-                        // if (value == true) {
-                        //   selectedUsers.add(user);
-                        // } else {
-                        //   selectedUsers.removeWhere(
-                        //     (sUser) => sUser['uid'] == user['uid'],
-                        //   );
-                        // }
-                        // (context as Element)
-                        //     .markNeedsBuild(); // Rebuild to update checkbox state
-                        //
-                        //
-
-                        setState(() {
-                          // Use setState to update the UI
-                          if (value == true) {
-                            _tempSelectedUsers.add(user);
-                          } else {
-                            _tempSelectedUsers.removeWhere(
-                              (sUser) => sUser['uid'] == user['uid'],
-                            );
-                          }
-                        });
-                      },
                     );
-                  },
-                ),
+                  }
+                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    return const Center(child: Text('No users found.'));
+                  }
+
+                  final users = snapshot.data!.docs
+                      .map((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        return {
+                          'uid': doc.id,
+                          'email': data['email'] ?? 'No Email',
+                          'photoUrl': data['photoUrl'] ?? '',
+                        };
+                      })
+                      .where(
+                        (user) => !widget.excludedUids.contains(user['uid']),
+                      )
+                      .toList();
+
+                  return ListView.builder(
+                    itemCount: users.length,
+                    itemBuilder: (context, index) {
+                      final user = users[index];
+                      return CheckboxListTile(
+                        title: Text(user['email'].split('@')[0]),
+                        secondary: CircleAvatar(
+                          backgroundImage:
+                              (user['photoUrl'] != null &&
+                                  user['photoUrl'].isNotEmpty)
+                              ? NetworkImage(user['photoUrl']) as ImageProvider
+                              : null,
+                          child:
+                              (user['photoUrl'] == null ||
+                                  user['photoUrl'].isEmpty)
+                              ? const Icon(Icons.person, color: Colors.white)
+                              : null,
+                          backgroundColor: AppColor.primaryColor,
+                        ),
+                        value: _tempSelectedUsers.any(
+                          (sUser) => sUser['uid'] == user['uid'],
+                        ),
+                        onChanged: (bool? value) {
+                          setState(() {
+                            if (value == true) {
+                              _tempSelectedUsers.add(user);
+                            } else {
+                              _tempSelectedUsers.removeWhere(
+                                (sUser) => sUser['uid'] == user['uid'],
+                              );
+                            }
+                          });
+                        },
+                      );
+                    },
+                  );
+                },
               ),
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context, _tempSelectedUsers);
-                    //Navigator.pop(context, selectedUsers);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColor.primaryColor,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(double.infinity, 50),
-                  ),
-                  child: const Text('Select', style: TextStyle(fontSize: 18)),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context, _tempSelectedUsers);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColor.primaryColor,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 50),
                 ),
+                child: const Text('Select', style: TextStyle(fontSize: 18)),
               ),
-            ],
-          );
-        },
+            ),
+          ],
+        ),
       ),
     );
   }
